@@ -281,9 +281,9 @@ function duplicateMeal(i) {
 
 function toggleMealPin(i) { templates[i].pinned = !templates[i].pinned; save(); renderMeals(); }
 
-function openMealForm(i) {
+function openMealForm(i, draft) {
   let editing = i !== undefined && i !== null && i >= 0;
-  let m = editing ? templates[i] : { name: "", category: "Breakfast", photo: null, foodItems: [], ingredients: [], nutrients: emptyNutrients() };
+  let m = editing ? templates[i] : (draft || { name: "", category: "Breakfast", photo: null, foodItems: [], ingredients: [], nutrients: emptyNutrients() });
 
   let macroRows = NUTRIENT_GROUPS.macro.map(n => `
     <label>${NUTRIENT_META[n].label} (${NUTRIENT_META[n].unit})</label>
@@ -626,12 +626,14 @@ const NUTRITION_SUBTABS = [
   { id: "contrib", label: "By Nutrient" },
   { id: "byfood", label: "By Food" },
   { id: "limit", label: "Limit List" },
-  { id: "density", label: "Density" }
+  { id: "density", label: "Density" },
+  { id: "planner", label: "Planner" }
 ];
 
 let nutritionSubTab = "overview";
 let contribNutrient = "protein";
 let byFoodEntryIndex = 0;
+let plannerItems = [];
 
 function renderNutrition() {
   let t = sumEntries(today.entries);
@@ -645,6 +647,7 @@ function renderNutrition() {
   else if (nutritionSubTab === "byfood") html += renderByFood();
   else if (nutritionSubTab === "limit") html += renderLimitList();
   else if (nutritionSubTab === "density") html += renderDensityList();
+  else if (nutritionSubTab === "planner") html += renderPlanner();
   else {
     let overview = renderNutritionOverview(t);
     html += overview.html;
@@ -660,6 +663,12 @@ function renderNutrition() {
       data: { labels: ["Protein", "Carbs", "Fat"], datasets: [{ data: [pCal, cCal, fCal], backgroundColor: ["#3ddc97", "#5b9bf7", "#f5b942"], borderWidth: 0 }] },
       options: { plugins: { legend: { labels: { color: getComputedStyle(document.body).getPropertyValue("--text") } } } }
     });
+  }
+
+  if (nutritionSubTab === "planner") {
+    window._plannerCount = 0;
+    plannerItems.forEach(it => addPlannerRow(it.food, it.grams));
+    recomputePlanner();
   }
 }
 
@@ -801,6 +810,116 @@ function renderDensityList() {
   else rows.forEach((r, idx) => html += `<div class="today-item"><div>${idx + 1}. ${escapeHtml(r.name)}</div><div class="meta">${round1(r.cal)} kcal/100g &middot; score ${round1(r.score * 100)}</div></div>`);
   html += `</div>`;
   return html;
+}
+
+/* ---- Planner: estimate nutrition for a hypothetical combination
+   of library foods, then optionally log it or save it as a meal ---- */
+
+function renderPlanner() {
+  let html = `<div class="card">
+    <h3>Meal Planner</h3>
+    <div class="section-note">Build a hypothetical combination of foods from your library to estimate its nutrition before logging it or saving it as a meal.</div>
+    <div id="plannerRows"></div>
+    <button class="secondary small" onclick="addPlannerRow()">+ Add food</button>
+  </div>
+  <div class="card" id="plannerTotals"><h3>Estimated nutrition</h3><div class="empty">Add a food above to estimate.</div></div>
+  <div class="card">
+    <label>Name</label>
+    <input id="plannerName" placeholder="e.g. Post-workout meal">
+    <div class="row" style="margin-top:10px">
+      <button onclick="logPlannerToToday()">Log to Today</button>
+      <button class="secondary" onclick="savePlannerAsMeal()">Save as Meal</button>
+    </div>
+  </div>`;
+  return html;
+}
+
+function addPlannerRow(food, grams) {
+  let idx = window._plannerCount++;
+  let options = foods.map(f => `<option value="${escapeAttr(f.name)}" ${food === f.name ? "selected" : ""}>${escapeHtml(f.name)}</option>`).join("");
+  document.getElementById("plannerRows").insertAdjacentHTML("beforeend", `
+    <div class="row" id="pl_row_${idx}" style="margin-bottom:6px">
+      <select style="flex:2" id="pl_food_${idx}" onchange="recomputePlanner()">
+        <option value="">Select food...</option>${options}
+      </select>
+      <input style="flex:1" id="pl_grams_${idx}" type="number" min="0" step="1" placeholder="grams" value="${grams || ''}" oninput="recomputePlanner()">
+      <button class="delete small" onclick="removePlannerRow(${idx})">&times;</button>
+    </div>`);
+}
+
+function removePlannerRow(idx) {
+  let row = document.getElementById(`pl_row_${idx}`);
+  if (row) row.remove();
+  recomputePlanner();
+}
+
+function recomputePlanner() {
+  let total = emptyNutrients();
+  let items = [];
+  for (let idx = 0; idx < window._plannerCount; idx++) {
+    let sel = document.getElementById(`pl_food_${idx}`);
+    let gramsEl = document.getElementById(`pl_grams_${idx}`);
+    if (!sel || !gramsEl || !sel.value) continue;
+    let grams = Number(gramsEl.value) || 0;
+    let food = foods.find(f => f.name === sel.value);
+    if (!food || grams <= 0) continue;
+    let factor = grams / 100;
+    ALL_NUTRIENTS.forEach(n => total[n] += (food.per100g[n] || 0) * factor);
+    items.push({ food: food.name, grams });
+  }
+  plannerItems = items;
+
+  let totalsEl = document.getElementById("plannerTotals");
+  if (!totalsEl) return;
+  if (!items.length) {
+    totalsEl.innerHTML = `<h3>Estimated nutrition</h3><div class="empty">Add a food above to estimate.</div>`;
+    return;
+  }
+  let html = `<h3>Estimated nutrition</h3>`;
+  NUTRIENT_GROUPS.macro.forEach(n => html += nutrientRow(n, total));
+  html += `<div class="nutrient-section-toggle" onclick="document.getElementById('plannerMicroBlock').style.display=document.getElementById('plannerMicroBlock').style.display==='none'?'block':'none'">
+    <span>Vitamins &amp; minerals — tap to expand</span><span>&#8964;</span>
+  </div>
+  <div id="plannerMicroBlock" style="display:none">`;
+  [...NUTRIENT_GROUPS.vitamins, ...NUTRIENT_GROUPS.minerals].forEach(n => html += nutrientRow(n, total));
+  html += `</div>`;
+  totalsEl.innerHTML = html;
+}
+
+function logPlannerToToday() {
+  if (!plannerItems.length) { alert("Add at least one food first."); return; }
+  let total = emptyNutrients();
+  plannerItems.forEach(it => {
+    let food = foods.find(f => f.name === it.food);
+    if (!food) return;
+    let factor = it.grams / 100;
+    ALL_NUTRIENTS.forEach(n => total[n] += (food.per100g[n] || 0) * factor);
+  });
+  let name = (document.getElementById("plannerName").value || "").trim() || "Planned meal";
+  today.entries.push({
+    name, category: "Snack", servings: 1, photo: null,
+    time: new Date().toTimeString().slice(0, 5),
+    nutrients: scaleNutrients(total, 1)
+  });
+  save();
+  plannerItems = [];
+  tab("meals");
+}
+
+function savePlannerAsMeal() {
+  if (!plannerItems.length) { alert("Add at least one food first."); return; }
+  let name = (document.getElementById("plannerName").value || "").trim();
+  let total = emptyNutrients();
+  plannerItems.forEach(it => {
+    let food = foods.find(f => f.name === it.food);
+    if (!food) return;
+    let factor = it.grams / 100;
+    ALL_NUTRIENTS.forEach(n => total[n] += (food.per100g[n] || 0) * factor);
+  });
+  let ingredients = plannerItems.map(it => `${it.grams}g ${it.food}`);
+  let draft = { name, category: "Breakfast", photo: null, foodItems: plannerItems.slice(), ingredients, nutrients: scaleNutrients(total, 1) };
+  tab("meals");
+  openMealForm(-1, draft);
 }
 
 function nutrientRow(n, t) {
@@ -1277,8 +1396,12 @@ function renderSettings() {
   </div>`;
 
   html += `<div class="card"><h3>Backup</h3>
-    <div class="section-note">Export regularly — all data (including meal and body photos) lives only in this browser's storage.</div>
-    <div class="row"><button onclick="exportData()">Export JSON</button><button class="secondary" onclick="document.getElementById('importFile').click()">Import JSON</button></div>
+    <div class="section-note">Export regularly — all data lives only in this browser's storage. Meal photos are always included. Body progress photos are private, so they're left out unless you opt in below.</div>
+    <label style="display:flex;align-items:center;gap:8px;margin:10px 0 4px">
+      <input type="checkbox" id="exportIncludeBodyPhotos" style="width:auto">
+      <span style="font-size:13px;color:var(--text)">Include body progress photos in export</span>
+    </label>
+    <div class="row" style="margin-top:8px"><button onclick="exportData()">Export JSON</button><button class="secondary" onclick="document.getElementById('importFile').click()">Import JSON</button></div>
     <input type="file" id="importFile" accept="application/json" style="display:none" onchange="importData(this)">
   </div>`;
 
@@ -1312,10 +1435,13 @@ function saveSettings() {
 function deleteHistoryDay(i) { if (confirm("Delete this day from history?")) { history.splice(i, 1); save(); renderSettings(); } }
 
 function exportData() {
-  let blob = new Blob([JSON.stringify({ templates, foods, today, history, bodyLog, bodyPhotos, water, settings }, null, 2)], { type: "application/json" });
+  let includeBodyPhotos = !!document.getElementById("exportIncludeBodyPhotos")?.checked;
+  let data = { templates, foods, today, history, bodyLog, water, settings };
+  if (includeBodyPhotos) data.bodyPhotos = bodyPhotos;
+  let blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
   let a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `diet_backup_${todayStr()}.json`;
+  a.download = `diet_backup_${todayStr()}${includeBodyPhotos ? "" : "_no-body-photos"}.json`;
   a.click();
 }
 
@@ -1330,7 +1456,7 @@ function importData(input) {
       today = data.today || { date: todayStr(), entries: [] };
       history = data.history || [];
       bodyLog = data.bodyLog || [];
-      bodyPhotos = data.bodyPhotos || [];
+      if (data.bodyPhotos !== undefined) bodyPhotos = data.bodyPhotos;
       water = data.water || {};
       settings = Object.assign({ targets: Object.assign({}, DEFAULT_TARGETS), proteinMode: "manual", proteinPerKgLBM: 2, waterTarget: 8, theme: "clinical", bodyPin: "" }, data.settings || {});
       bodyPhotosUnlocked = false;
