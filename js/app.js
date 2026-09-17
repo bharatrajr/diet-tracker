@@ -1084,66 +1084,62 @@ function fireNotification(title, body) {
 }
 
 /* ============================================================
-   "Fill the Gap" — suggests quantities of foods/supplements from
-   the library to close today's remaining nutrient targets.
+   "Fill the Gap" — for each nutrient still short of today's
+   target, finds whichever food in the user's own library is the
+   best source of it, and suggests a dose to close the gap.
    ============================================================ */
+
+// Picks a human-friendly quantity: whole units of the food's smallest
+// preset when that lines up reasonably with the needed grams, else grams.
+function suggestUnitsForGrams(food, neededGrams) {
+  if (food.presets && food.presets.length) {
+    let preset = food.presets.reduce((a, b) => (a.grams <= b.grams ? a : b));
+    if (preset.grams > 0) {
+      let count = Math.max(1, Math.round(neededGrams / preset.grams));
+      let approxGrams = count * preset.grams;
+      if (Math.abs(approxGrams - neededGrams) / neededGrams < 0.35) {
+        return `${count} × ${preset.label}`;
+      }
+    }
+  }
+  return `${Math.max(1, Math.round(neededGrams / 5) * 5)}g`;
+}
 
 function nutritionGapSuggestions(t) {
   let gap = n => Math.max(0, (targetFor(n) || 0) - (t[n] || 0));
-  let lines = [];
+  let deficient = ALL_NUTRIENTS.filter(n => targetFor(n) && gap(n) > 0.01);
+  if (!deficient.length || !foods.length) return [];
 
-  // Omega-3 is special-cased: a fixed EPA/DHA capsule first, then
-  // ground flaxseed to cover whatever ALA is still short after that.
-  let omega3Gap = gap("omega3");
-  if (omega3Gap > 0.05) {
-    let tabletFood = foods.find(f => f.name === "Omega-3 EPA/DHA (Tata 1mg)");
-    let flaxFood = foods.find(f => f.name === "Flaxseed, ground");
-    let covered = 0;
-    if (tabletFood) {
-      covered = tabletFood.per100g.omega3 || 0;
-      lines.push({ text: "1 capsule Omega-3 EPA/DHA (Tata 1mg)", note: `Omega-3 (~${round1(covered)}g EPA/DHA)` });
-    }
-    let remaining = omega3Gap - covered;
-    if (remaining > 0.1 && flaxFood && flaxFood.per100g.omega3 > 0) {
-      let grams = Math.min(21, Math.ceil((remaining * 100 / flaxFood.per100g.omega3) / 7) * 7);
-      if (grams > 0) lines.push({ text: `${grams}g Flaxseed, ground (~${Math.round(grams / 7)} tbsp)`, note: "Omega-3 (ALA)" });
-    }
-  }
-
-  FILLER_MAP.forEach(entry => {
-    let food = foods.find(f => f.name === entry.food);
-    if (!food) return;
-    let neededGrams = 0;
-    let covers = [];
-    entry.nutrients.forEach(n => {
-      let g = gap(n);
-      let per100 = food.per100g[n] || 0;
-      if (g > 0 && per100 > 0) {
-        covers.push(n);
-        neededGrams = Math.max(neededGrams, g * 100 / per100);
-      }
+  // For each deficient nutrient, find the richest source in the user's library.
+  let bestFoodFor = {};
+  deficient.forEach(n => {
+    let best = null, bestVal = 0;
+    foods.forEach(f => {
+      let v = (f.per100g && f.per100g[n]) || 0;
+      if (v > bestVal) { bestVal = v; best = f; }
     });
-    if (!covers.length) return;
-    neededGrams = Math.min(entry.maxGrams, Math.ceil(neededGrams / entry.roundTo) * entry.roundTo);
-    if (neededGrams <= 0) return;
-    let qty = entry.niceUnit
-      ? `${Math.ceil(neededGrams / entry.niceUnit.grams)} ${entry.niceUnit.label}${Math.ceil(neededGrams / entry.niceUnit.grams) > 1 ? "s" : ""} (~${neededGrams}g)`
-      : `${neededGrams}g`;
-    lines.push({ text: `${qty} ${food.name}`, note: covers.map(n => NUTRIENT_META[n].label).join(", ") });
+    if (best) bestFoodFor[n] = best;
   });
 
-  FILLER_SUPPLEMENTS.forEach(entry => {
-    let food = foods.find(f => f.name === entry.food);
+  // Group nutrients that share the same best food so one dose covers all of them.
+  let byFood = new Map();
+  deficient.forEach(n => {
+    let food = bestFoodFor[n];
     if (!food) return;
-    let units = 0, covers = [];
-    entry.nutrients.forEach(n => {
-      let g = gap(n);
-      let per = food.per100g[n] || 0;
-      if (g > 0 && per > 0) { covers.push(n); units = Math.max(units, Math.ceil(g / per)); }
+    if (!byFood.has(food)) byFood.set(food, []);
+    byFood.get(food).push(n);
+  });
+
+  let lines = [];
+  byFood.forEach((nutrients, food) => {
+    let neededGrams = 0;
+    nutrients.forEach(n => {
+      let per100 = food.per100g[n] || 0;
+      if (per100 > 0) neededGrams = Math.max(neededGrams, gap(n) * 100 / per100);
     });
-    if (!covers.length) return;
-    units = Math.min(entry.maxUnits, units);
-    lines.push({ text: `${units} ${entry.unitLabel}${units > 1 ? "s" : ""} ${food.name}`, note: covers.map(n => NUTRIENT_META[n].label).join(", ") });
+    neededGrams = Math.min(500, neededGrams);
+    if (neededGrams < 1) return;
+    lines.push({ text: `${suggestUnitsForGrams(food, neededGrams)} ${food.name}`, note: nutrients.map(n => NUTRIENT_META[n].label).join(", ") });
   });
 
   return lines;
@@ -1153,9 +1149,11 @@ function renderGapCard(t) {
   let lines = nutritionGapSuggestions(t);
   let html = `<div class="card"><h3>Fill the Gap</h3>`;
   if (!lines.length) {
-    html += `<div class="empty">You're on track — no notable gaps right now.</div>`;
+    html += !foods.length
+      ? `<div class="empty">Add some foods to your library first — suggestions are picked from what's there.</div>`
+      : `<div class="empty">You're on track — no notable gaps right now.</div>`;
   } else {
-    html += `<div class="section-note">Rough suggestions to close today's remaining targets, based on your Foods library. Supplement doses are typical approximations — edit them in the Foods tab to match your product's actual label.</div>`;
+    html += `<div class="section-note">Rough suggestions to close today's remaining targets, picked from your own Foods library.</div>`;
     lines.forEach(l => html += `<div class="today-item"><div>${escapeHtml(l.text)}</div><div class="meta">${escapeHtml(l.note)}</div></div>`);
   }
   html += `</div>`;
