@@ -209,7 +209,7 @@ function buildAiFoodPrompt(foodName) {
   let name = (foodName || "the food").trim();
   return `Give me the complete nutrition profile of "${name}" per 100 grams (or per 100ml if it is a liquid).
 
-Return ONLY a single valid JSON object, no other text, no markdown fences, using exactly this schema and these units:
+Return ONLY a single valid JSON object in plain pastable text, no other text before or after it, no markdown fences, using exactly this schema and these units:
 
 {
   "name": "${name}",
