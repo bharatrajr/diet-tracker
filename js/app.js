@@ -175,7 +175,8 @@ function renderMeals() {
   let filtered = templates
     .map((m, i) => ({ m, i }))
     .filter(({ m }) => mealFilter === "All" || m.category === mealFilter)
-    .filter(({ m }) => !mealSearch || m.name.toLowerCase().includes(mealSearch.toLowerCase()));
+    .filter(({ m }) => !mealSearch || m.name.toLowerCase().includes(mealSearch.toLowerCase()))
+    .sort((a, b) => (b.m.pinned ? 1 : 0) - (a.m.pinned ? 1 : 0));
 
   let html = `<h2 class="page-title">Meals</h2>`;
   html += `<div class="search-wrap"><input placeholder="Search meal templates..." value="${escapeAttr(mealSearch)}" oninput="mealSearch=this.value;renderMeals()"></div>`;
@@ -190,7 +191,7 @@ function renderMeals() {
       <div class="meal-head">
         ${m.photo ? `<img class="meal-photo-sm" src="${m.photo}">` : ""}
         <div class="info">
-          <div class="spread"><b>${escapeHtml(m.name)}</b><span class="tag">${m.category || "Uncategorized"}</span></div>
+          <div class="spread"><b>${m.pinned ? "&#128204; " : ""}${escapeHtml(m.name)}</b><span class="tag">${m.category || "Uncategorized"}</span></div>
           <div class="ingredients">${m.ingredients && m.ingredients.length ? escapeHtml(m.ingredients.join(", ")) : "No ingredients listed"}</div>
           <div class="ingredients">${round1(m.nutrients.cal)} kcal &middot; P ${round1(m.nutrients.protein)}g &middot; C ${round1(m.nutrients.carbs)}g &middot; F ${round1(m.nutrients.fat)}g</div>
         </div>
@@ -198,6 +199,7 @@ function renderMeals() {
       <div class="row">
         <button onclick="openAddServing(${i})">Add</button>
         <button class="edit small" onclick="openMealForm(${i})">Edit</button>
+        <button class="secondary small" onclick="toggleMealPin(${i})">${m.pinned ? "Unpin" : "Pin"}</button>
         <button class="secondary small" onclick="duplicateMeal(${i})">Duplicate</button>
         <button class="delete small" onclick="deleteTemplate(${i})">Delete</button>
       </div>
@@ -273,8 +275,11 @@ function deleteTemplate(i) {
 function duplicateMeal(i) {
   let copy = JSON.parse(JSON.stringify(templates[i]));
   copy.name = copy.name + " Copy";
+  copy.pinned = false;
   templates.push(copy); save(); renderMeals();
 }
+
+function toggleMealPin(i) { templates[i].pinned = !templates[i].pinned; save(); renderMeals(); }
 
 function openMealForm(i) {
   let editing = i !== undefined && i !== null && i >= 0;
@@ -450,7 +455,9 @@ function confirmQuickAdd() {
    ============================================================ */
 
 function renderFoods() {
-  let filtered = foods.map((f, i) => ({ f, i })).filter(({ f }) => !foodSearch || f.name.toLowerCase().includes(foodSearch.toLowerCase()));
+  let filtered = foods.map((f, i) => ({ f, i }))
+    .filter(({ f }) => !foodSearch || f.name.toLowerCase().includes(foodSearch.toLowerCase()))
+    .sort((a, b) => (b.f.pinned ? 1 : 0) - (a.f.pinned ? 1 : 0));
 
   let html = `<h2 class="page-title">Foods</h2>
   <div class="section-note">Reference nutrition per 100g/100ml with common serving presets. Log a preset straight to today, or edit the numbers for your own brand.</div>
@@ -464,11 +471,12 @@ function renderFoods() {
 
   filtered.forEach(({ f, i }) => {
     html += `<div class="card">
-      <div class="spread"><b>${escapeHtml(f.name)}</b><span class="tag">${f.category || "Other"}</span></div>
+      <div class="spread"><b>${f.pinned ? "&#128204; " : ""}${escapeHtml(f.name)}</b><span class="tag">${f.category || "Other"}</span></div>
       <div class="ingredients">Per 100g: ${round1(f.per100g.cal)} kcal &middot; P ${round1(f.per100g.protein)}g &middot; C ${round1(f.per100g.carbs)}g &middot; F ${round1(f.per100g.fat)}g</div>
       <div class="row">${(f.presets || []).map((p, pi) => `<button class="secondary small" onclick="logFoodPreset(${i},${pi})">${escapeHtml(p.label)}</button>`).join("")}</div>
       <div class="row" style="margin-top:8px">
         <button class="edit small" onclick="openFoodForm(${i})">Edit</button>
+        <button class="secondary small" onclick="toggleFoodPin(${i})">${f.pinned ? "Unpin" : "Pin"}</button>
         <button class="delete small" onclick="deleteFood(${i})">Delete</button>
       </div>
     </div>`;
@@ -476,6 +484,8 @@ function renderFoods() {
 
   document.getElementById("foods").innerHTML = html;
 }
+
+function toggleFoodPin(i) { foods[i].pinned = !foods[i].pinned; save(); renderFoods(); }
 
 function logFoodPreset(i, pi) {
   let f = foods[i], p = f.presets[pi];
@@ -611,10 +621,47 @@ function parseAndPrefillAiFood() {
    NUTRITION TAB
    ============================================================ */
 
+const NUTRITION_SUBTABS = [
+  { id: "overview", label: "Overview" },
+  { id: "contrib", label: "By Nutrient" },
+  { id: "limit", label: "Limit List" },
+  { id: "density", label: "Density" }
+];
+
+let nutritionSubTab = "overview";
+let contribNutrient = "protein";
+
 function renderNutrition() {
   let t = sumEntries(today.entries);
-  let html = `<h2 class="page-title">Nutrition — Today</h2><div class="card">`;
+  let html = `<h2 class="page-title">Nutrition — Today</h2>`;
+  html += `<div class="chip-row">`;
+  NUTRITION_SUBTABS.forEach(st => html += `<div class="chip ${nutritionSubTab === st.id ? 'active' : ''}" onclick="nutritionSubTab='${st.id}';renderNutrition()">${st.label}</div>`);
+  html += `</div>`;
 
+  let totalMacroCal = 0;
+  if (nutritionSubTab === "contrib") html += renderNutrientContributors(t);
+  else if (nutritionSubTab === "limit") html += renderLimitList();
+  else if (nutritionSubTab === "density") html += renderDensityList();
+  else {
+    let overview = renderNutritionOverview(t);
+    html += overview.html;
+    totalMacroCal = overview.totalMacroCal;
+  }
+
+  document.getElementById("nutrition").innerHTML = html;
+
+  if (nutritionSubTab === "overview" && totalMacroCal > 0) {
+    let pCal = t.protein * 4, cCal = t.carbs * 4, fCal = t.fat * 9;
+    new Chart(document.getElementById("macroPie"), {
+      type: "doughnut",
+      data: { labels: ["Protein", "Carbs", "Fat"], datasets: [{ data: [pCal, cCal, fCal], backgroundColor: ["#3ddc97", "#5b9bf7", "#f5b942"], borderWidth: 0 }] },
+      options: { plugins: { legend: { labels: { color: getComputedStyle(document.body).getPropertyValue("--text") } } } }
+    });
+  }
+}
+
+function renderNutritionOverview(t) {
+  let html = `<div class="card">`;
   NUTRIENT_GROUPS.macro.forEach(n => html += nutrientRow(n, t));
   html += `</div>`;
 
@@ -630,16 +677,89 @@ function renderNutrition() {
   if (settings.proteinMode === "lbm") html += `<div class="section-note">Protein target is calculated from your latest body-fat entry (lean mass &times; ${settings.proteinPerKgLBM}g/kg). Update it in Body, or change the mode in Data.</div>`;
 
   html += renderGapCard(t);
+  return { html, totalMacroCal };
+}
 
-  document.getElementById("nutrition").innerHTML = html;
+/* ---- By Nutrient: which logged foods contributed to a given nutrient ---- */
 
-  if (totalMacroCal > 0) {
-    new Chart(document.getElementById("macroPie"), {
-      type: "doughnut",
-      data: { labels: ["Protein", "Carbs", "Fat"], datasets: [{ data: [pCal, cCal, fCal], backgroundColor: ["#3ddc97", "#5b9bf7", "#f5b942"], borderWidth: 0 }] },
-      options: { plugins: { legend: { labels: { color: getComputedStyle(document.body).getPropertyValue("--text") } } } }
+function renderNutrientContributors(t) {
+  let html = `<div class="card">
+    <label>Nutrient</label>
+    <select onchange="contribNutrient=this.value;renderNutrition()">
+      ${ALL_NUTRIENTS.map(n => `<option value="${n}" ${n === contribNutrient ? "selected" : ""}>${NUTRIENT_META[n].label}</option>`).join("")}
+    </select>
+  </div>`;
+
+  let total = t[contribNutrient] || 0;
+  let rows = today.entries
+    .map(e => ({ name: e.name, val: e.nutrients[contribNutrient] || 0 }))
+    .filter(r => r.val > 0)
+    .sort((a, b) => b.val - a.val);
+
+  html += `<div class="card"><h3>${NUTRIENT_META[contribNutrient].label} contributors today</h3>`;
+  if (!rows.length) {
+    html += `<div class="empty">Nothing logged today contributes ${NUTRIENT_META[contribNutrient].label.toLowerCase()}.</div>`;
+  } else {
+    rows.forEach(r => {
+      let pct = total > 0 ? round1(r.val / total * 100) : 0;
+      html += `<div class="today-item"><div>${escapeHtml(r.name)}</div><div class="meta">${round1(r.val)} ${NUTRIENT_META[contribNutrient].unit} &middot; ${pct}%</div></div>`;
     });
+    html += `<div class="ingredients" style="margin-top:10px">Today's total: ${round1(total)} ${NUTRIENT_META[contribNutrient].unit}</div>`;
   }
+  html += `</div>`;
+  return html;
+}
+
+/* ---- Limit List: today's biggest calorie and sugar sources ---- */
+
+function renderLimitList() {
+  let html = `<div class="section-note">Today's logged items ranked by how much they're driving calories and sugar — the biggest levers if you want to cut back.</div>`;
+
+  function topList(key, label, unit) {
+    let rows = today.entries
+      .map(e => ({ name: e.name, val: e.nutrients[key] || 0 }))
+      .filter(r => r.val > 0)
+      .sort((a, b) => b.val - a.val)
+      .slice(0, 8);
+    let block = `<div class="card"><h3>Biggest ${label} sources</h3>`;
+    if (!rows.length) block += `<div class="empty">Nothing logged yet today.</div>`;
+    else rows.forEach(r => block += `<div class="today-item"><div>${escapeHtml(r.name)}</div><div class="meta">${round1(r.val)} ${unit}</div></div>`);
+    block += `</div>`;
+    return block;
+  }
+
+  html += topList("cal", "calorie", "kcal");
+  html += topList("sugar", "sugar", "g");
+  return html;
+}
+
+/* ---- Density: which library foods pack the most nutrition per calorie ---- */
+
+function nutrientDensityScore(per100g) {
+  let cal = per100g.cal;
+  if (!cal || cal <= 0) return null;
+  let score = 0;
+  ALL_NUTRIENTS.forEach(n => {
+    if (n === "cal") return;
+    let target = settings.targets[n];
+    if (target > 0) score += (per100g[n] || 0) / target;
+  });
+  return score / (cal / 100);
+}
+
+function renderDensityList() {
+  let rows = foods
+    .filter(f => f.category !== "Supplement")
+    .map(f => ({ name: f.name, cal: f.per100g.cal, score: nutrientDensityScore(f.per100g) }))
+    .filter(r => r.score !== null)
+    .sort((a, b) => b.score - a.score);
+
+  let html = `<div class="section-note">Ranks your Foods library by overall nutrient coverage per 100 calories — higher means more vitamins/minerals/protein for the calories it costs.</div>
+  <div class="card"><h3>Most nutrition per calorie</h3>`;
+  if (!rows.length) html += `<div class="empty">Add some foods with calories to your library to see this ranking.</div>`;
+  else rows.forEach((r, idx) => html += `<div class="today-item"><div>${idx + 1}. ${escapeHtml(r.name)}</div><div class="meta">${round1(r.cal)} kcal/100g &middot; score ${round1(r.score * 100)}</div></div>`);
+  html += `</div>`;
+  return html;
 }
 
 function nutrientRow(n, t) {
