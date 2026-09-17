@@ -1,0 +1,145 @@
+/* ============================================================
+   Theme: Night Shift (default) — dark, mint accent, soft rounded
+   ============================================================ */
+:root,
+[data-theme="night"]{
+--bg:#0b1220;
+--panel:#151f30;
+--panel2:#1c2940;
+--border:#26344a;
+--text:#e7ecf5;
+--muted:#8a99b3;
+--accent:#3ddc97;
+--accent-text:#04231a;
+--info:#5b9bf7;
+--info-text:#04122a;
+--warn:#f5b942;
+--danger:#f4635c;
+--danger-text:#2a0705;
+--nav-bg:#060b14;
+--radius:14px;
+--card-border-width:1px;
+--card-shadow:none;
+--font-body:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+--font-heading:var(--font-body);
+--font-mono:ui-monospace,Menlo,Consolas,monospace;
+--heading-weight:700;
+}
+
+/* ============================================================
+   Theme: Daylight Clinical — near-white, dashboard, dense, teal
+   ============================================================ */
+[data-theme="clinical"]{
+--bg:#f4f7f9;
+--panel:#ffffff;
+--panel2:#eef2f5;
+--border:#d7dfe4;
+--text:#152229;
+--muted:#5c7480;
+--accent:#0f6d5d;
+--accent-text:#ffffff;
+--info:#2455c9;
+--info-text:#ffffff;
+--warn:#b5680b;
+--danger:#c23b32;
+--danger-text:#ffffff;
+--nav-bg:#ffffff;
+--radius:8px;
+--card-border-width:1px;
+--card-shadow:none;
+--font-body:"Inter","Segoe UI",Helvetica,Arial,sans-serif;
+--font-heading:var(--font-body);
+--font-mono:"IBM Plex Mono",ui-monospace,Consolas,monospace;
+--heading-weight:600;
+--card-padding:14px;
+--card-gap:10px;
+}
+[data-theme="clinical"] .bottom-nav{border-top:1px solid var(--border);box-shadow:0 -2px 8px rgba(0,0,0,.04);}
+[data-theme="clinical"] .fab{box-shadow:0 2px 10px rgba(15,109,93,.35);}
+[data-theme="clinical"] .card{box-shadow:0 1px 2px rgba(20,40,50,.04);}
+
+/* ============================================================
+   Theme: Ledger — paper/ink duty-register aesthetic, hairline
+   rows instead of boxed cards, serif headings, oxblood accent
+   ============================================================ */
+[data-theme="ledger"]{
+--bg:#efeae0;
+--panel:#efeae0;
+--panel2:#e4ddcf;
+--border:#c9bfa8;
+--text:#1b2430;
+--muted:#6b6152;
+--accent:#8b3a3a;
+--accent-text:#f6f1e7;
+--info:#39536b;
+--info-text:#f6f1e7;
+--warn:#946b1f;
+--danger:#8b3a3a;
+--danger-text:#f6f1e7;
+--nav-bg:#e4ddcf;
+--radius:2px;
+--card-border-width:0px;
+--card-shadow:none;
+--font-body:Georgia,"Iowan Old Style","Times New Roman",serif;
+--font-heading:var(--font-body);
+--font-mono:"Courier New",ui-monospace,monospace;
+--heading-weight:700;
+--heading-spacing:.3px;
+--tag-radius:2px;
+--sheet-radius:0px;
+--card-padding:14px 2px;
+}
+[data-theme="ledger"] .card{border-bottom:1px solid var(--border);}
+[data-theme="ledger"] .card:last-child{border-bottom:none;}
+[data-theme="ledger"] input,
+[data-theme="ledger"] select,
+[data-theme="ledger"] textarea{border-radius:0;background:#f6f1e7;}
+[data-theme="ledger"] .metric-label .val,
+[data-theme="ledger"] .stat-grid .n,
+[data-theme="ledger"] .today-item .meta{font-family:var(--font-mono);}
+[data-theme="ledger"] .progress{border-radius:0;}
+[data-theme="ledger"] .bar{border-radius:0;}
+[data-theme="ledger"] .fab{border-radius:2px;font-size:22px;}
+[data-theme="ledger"] .drop{border-radius:2px;}
+[data-theme="ledger"] .chip{border-radius:2px;}
+[data-theme="ledger"] .stat-grid .stat{border-radius:2px;}
+
+/* ============================================================
+   Theme: Terminal — CRT monospace, phosphor green, sharp edges
+   ============================================================ */
+[data-theme="terminal"]{
+--bg:#04100a;
+--panel:#04100a;
+--panel2:#0a1f14;
+--border:#1f5c3a;
+--text:#39ff88;
+--muted:#2f8f5c;
+--accent:#39ff88;
+--accent-text:#04100a;
+--info:#7ad9ff;
+--info-text:#04100a;
+--warn:#ffcc33;
+--danger:#ff5c5c;
+--danger-text:#04100a;
+--nav-bg:#04100a;
+--radius:0px;
+--card-border-width:1px;
+--card-shadow:none;
+--font-body:ui-monospace,"Courier New",Consolas,monospace;
+--font-heading:var(--font-body);
+--font-mono:var(--font-body);
+--heading-weight:700;
+--tag-radius:0px;
+--sheet-radius:0px;
+--input-radius:0px;
+--btn-radius:0px;
+}
+[data-theme="terminal"] h2.page-title::before{content:"> ";}
+[data-theme="terminal"] .card{border-style:solid;}
+[data-theme="terminal"] button{text-transform:uppercase;letter-spacing:.5px;}
+[data-theme="terminal"] .fab{border-radius:0;border:1px solid var(--border);}
+[data-theme="terminal"] .drop{border-radius:0;}
+[data-theme="terminal"] .theme-opt{border-radius:0;}
+[data-theme="terminal"] .today-item .thumb,
+[data-theme="terminal"] .meal-photo,
+[data-theme="terminal"] .meal-photo-sm{border-radius:0;filter:grayscale(.3) contrast(1.1);}

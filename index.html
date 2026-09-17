@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Diet Tracker</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0b1220">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon.svg">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/themes.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body data-theme="night">
+
+<div class="container">
+<div id="meals"></div>
+<div id="foods" style="display:none"></div>
+<div id="nutrition" style="display:none"></div>
+<div id="body" style="display:none"></div>
+<div id="water" style="display:none"></div>
+<div id="trends" style="display:none"></div>
+<div id="settings" style="display:none"></div>
+</div>
+
+<button class="fab" onclick="openQuickAdd()">+</button>
+
+<div class="bottom-nav">
+<button data-tab="meals" onclick="tab('meals')"><span class="ic">&#127869;</span>Meals</button>
+<button data-tab="foods" onclick="tab('foods')"><span class="ic">&#127815;</span>Foods</button>
+<button data-tab="nutrition" onclick="tab('nutrition')"><span class="ic">&#128202;</span>Nutrition</button>
+<button data-tab="body" onclick="tab('body')"><span class="ic">&#9878;&#65039;</span>Body</button>
+<button data-tab="water" onclick="tab('water')"><span class="ic">&#128167;</span>Water</button>
+<button data-tab="trends" onclick="tab('trends')"><span class="ic">&#128200;</span>Trends</button>
+<button data-tab="settings" onclick="tab('settings')"><span class="ic">&#9881;&#65039;</span>Data</button>
+</div>
+
+<div id="overlayRoot"></div>
+
+<script src="js/data.js"></script>
+<script src="js/app.js"></script>
+
+</body>
+</html>
