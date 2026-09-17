@@ -22,7 +22,7 @@ let bodyPhotos = load("dt_bodyPhotos", []);
 let bodyPhotosUnlocked = false;
 let bodyCompareSelection = [];
 let water = load("dt_water", {});
-let settings = Object.assign({ targets: Object.assign({}, DEFAULT_TARGETS), proteinMode: "manual", proteinPerKgLBM: 2, waterTarget: 8, theme: "night", bodyPin: "" }, load("dt_settings", {}));
+let settings = Object.assign({ targets: Object.assign({}, DEFAULT_TARGETS), proteinMode: "manual", proteinPerKgLBM: 2, waterTarget: 8, theme: "clinical", bodyPin: "" }, load("dt_settings", {}));
 if (!settings.targets) settings.targets = Object.assign({}, DEFAULT_TARGETS);
 ALL_NUTRIENTS.forEach(n => { if (settings.targets[n] === undefined) settings.targets[n] = DEFAULT_TARGETS[n]; });
 
@@ -70,7 +70,7 @@ function finalizeDay(date, entries) {
    ============================================================ */
 
 function applyTheme() {
-  document.body.dataset.theme = settings.theme || "night";
+  document.body.dataset.theme = settings.theme || "clinical";
 }
 
 function setTheme(id) {
@@ -1084,7 +1084,7 @@ function importData(input) {
       bodyLog = data.bodyLog || [];
       bodyPhotos = data.bodyPhotos || [];
       water = data.water || {};
-      settings = Object.assign({ targets: Object.assign({}, DEFAULT_TARGETS), proteinMode: "manual", proteinPerKgLBM: 2, waterTarget: 8, theme: "night", bodyPin: "" }, data.settings || {});
+      settings = Object.assign({ targets: Object.assign({}, DEFAULT_TARGETS), proteinMode: "manual", proteinPerKgLBM: 2, waterTarget: 8, theme: "clinical", bodyPin: "" }, data.settings || {});
       bodyPhotosUnlocked = false;
       save(); applyTheme();
       alert("Backup imported.");
