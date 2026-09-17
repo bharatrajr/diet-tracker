@@ -178,7 +178,126 @@ const DEFAULT_FOODS = [
       { label: "1 medium guava (~100g)", grams: 100 },
       { label: "Half guava (~50g)", grams: 50 }
     ]
+  },
+  {
+    name: "Sunflower seeds, dried",
+    category: "Nuts & Seeds",
+    per100g: Object.assign(emptyNutrients(), {
+      cal: 584, protein: 20.8, carbs: 20, fat: 51.5, omega3: 0.07, fiber: 8.6, sugar: 2.6,
+      vitE: 35.2, b1: 1.48, b2: 0.25, b3: 8.34, b6: 1.34, b9: 227,
+      calcium: 78, iron: 5.25, magnesium: 325, phosphorus: 660, potassium: 645, sodium: 9, zinc: 5.0
+    }),
+    presets: [
+      { label: "1 tbsp (~10g)", grams: 10 },
+      { label: "2 tbsp (~20g)", grams: 20 },
+      { label: "1 handful (~30g)", grams: 30 }
+    ]
+  },
+  {
+    name: "Flaxseed, ground",
+    category: "Nuts & Seeds",
+    per100g: Object.assign(emptyNutrients(), {
+      cal: 534, protein: 18.3, carbs: 28.9, fat: 42.2, omega3: 22.8, fiber: 27.3, sugar: 1.55,
+      vitE: 0.31, b1: 1.644, b2: 0.161, b3: 3.08, b6: 0.473, b9: 87,
+      calcium: 255, iron: 5.73, magnesium: 392, phosphorus: 642, potassium: 813, sodium: 30, zinc: 4.34
+    }),
+    presets: [
+      { label: "1 tbsp (~7g)", grams: 7 },
+      { label: "2 tbsp (~14g)", grams: 14 },
+      { label: "100g", grams: 100 }
+    ]
+  },
+  {
+    name: "Carrot, raw",
+    category: "Vegetable",
+    per100g: Object.assign(emptyNutrients(), {
+      cal: 41, protein: 0.93, carbs: 9.58, fat: 0.24, fiber: 2.8, sugar: 4.74,
+      vitA: 835, vitC: 5.9, vitE: 0.66, vitK: 13.2,
+      b1: 0.066, b2: 0.058, b3: 0.983, b6: 0.138, b9: 19,
+      calcium: 33, iron: 0.3, magnesium: 12, phosphorus: 35, potassium: 320, sodium: 69, zinc: 0.24
+    }),
+    presets: [
+      { label: "1 medium carrot (~60g)", grams: 60 },
+      { label: "1 cup chopped (~128g)", grams: 128 },
+      { label: "100g", grams: 100 }
+    ]
+  },
+  {
+    name: "Mixed vegetables, frozen",
+    category: "Vegetable",
+    per100g: Object.assign(emptyNutrients(), {
+      cal: 65, protein: 2.8, carbs: 13, fat: 0.4, fiber: 4, sugar: 3.5,
+      vitA: 300, vitC: 12, vitK: 20,
+      b1: 0.15, b6: 0.1, b9: 40,
+      calcium: 30, iron: 0.8, magnesium: 20, phosphorus: 55, potassium: 200, sodium: 40, zinc: 0.5
+    }),
+    presets: [
+      { label: "1 cup (~150g)", grams: 150 },
+      { label: "100g", grams: 100 }
+    ]
+  },
+  {
+    name: "Bread, whole wheat",
+    category: "Grain",
+    per100g: Object.assign(emptyNutrients(), {
+      cal: 247, protein: 13, carbs: 41, fat: 3.4, fiber: 7, sugar: 5,
+      vitK: 3, b1: 0.25, b2: 0.13, b3: 4.3, b6: 0.1, b9: 40,
+      calcium: 107, iron: 2.5, magnesium: 65, phosphorus: 180, potassium: 250, sodium: 400, zinc: 1.5
+    }),
+    presets: [
+      { label: "1 slice (~30g)", grams: 30 },
+      { label: "2 slices (~60g)", grams: 60 },
+      { label: "100g", grams: 100 }
+    ]
+  },
+  {
+    name: "Vitamin D3 + K2 (Tata 1mg)",
+    category: "Supplement",
+    per100g: Object.assign(emptyNutrients(), { vitD: 50, vitK2: 45 }),
+    presets: [
+      { label: "1 tablet", grams: 100 }
+    ]
+  },
+  {
+    name: "Omega-3 EPA/DHA (Tata 1mg)",
+    category: "Supplement",
+    per100g: Object.assign(emptyNutrients(), { omega3: 0.3 }),
+    presets: [
+      { label: "1 capsule", grams: 100 }
+    ]
+  },
+  {
+    name: "Magnesium tablet",
+    category: "Supplement",
+    per100g: Object.assign(emptyNutrients(), { magnesium: 250 }),
+    presets: [
+      { label: "1 tablet", grams: 100 }
+    ]
   }
+];
+
+/* ============================================================
+   Nutrition gap-filler suggestions -- maps each nutrient to a
+   food/supplement from the library that's a good source of it.
+   Doses on the supplement entries are typical approximations --
+   edit them in the Foods tab to match your actual product label.
+   ============================================================ */
+
+const FILLER_MAP = [
+  { food: "Rajma (kidney beans), cooked", nutrients: ["protein", "fiber", "b9", "iron"], roundTo: 25, maxGrams: 300 },
+  { food: "Sunflower seeds, dried", nutrients: ["vitE", "b1", "b3", "b6", "zinc"], roundTo: 5, maxGrams: 40 },
+  { food: "Egg, boiled", nutrients: ["protein", "b2", "b12", "phosphorus"], roundTo: 50, maxGrams: 200, niceUnit: { grams: 50, label: "egg" } },
+  { food: "Milk, skimmed", nutrients: ["calcium"], roundTo: 50, maxGrams: 400 },
+  { food: "Curd, toned milk (dahi)", nutrients: ["calcium", "protein"], roundTo: 50, maxGrams: 200 },
+  { food: "Avocado, raw", nutrients: ["fat", "potassium", "fiber"], roundTo: 25, maxGrams: 200 },
+  { food: "Carrot, raw", nutrients: ["vitA"], roundTo: 25, maxGrams: 150 },
+  { food: "Mixed vegetables, frozen", nutrients: ["vitC", "vitK"], roundTo: 25, maxGrams: 200 },
+  { food: "Bread, whole wheat", nutrients: ["carbs"], roundTo: 30, maxGrams: 120, niceUnit: { grams: 30, label: "slice" } }
+];
+
+const FILLER_SUPPLEMENTS = [
+  { food: "Vitamin D3 + K2 (Tata 1mg)", nutrients: ["vitD", "vitK2"], maxUnits: 2, unitLabel: "tablet" },
+  { food: "Magnesium tablet", nutrients: ["magnesium"], maxUnits: 2, unitLabel: "tablet" }
 ];
 
 const DEFAULT_TEMPLATES = [

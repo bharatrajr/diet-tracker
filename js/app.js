@@ -15,6 +15,10 @@ function todayStr() { return new Date().toISOString().slice(0, 10); }
 
 let templates = load("dt_templates", DEFAULT_TEMPLATES);
 let foods = load("dt_foods", DEFAULT_FOODS);
+let addedNewDefaultFoods = false;
+DEFAULT_FOODS.forEach(f => {
+  if (!foods.some(x => x.name === f.name)) { foods.push(JSON.parse(JSON.stringify(f))); addedNewDefaultFoods = true; }
+});
 let today = load("dt_today", { date: todayStr(), entries: [] });
 let history = load("dt_history", []);
 let bodyLog = load("dt_bodyLog", []);
@@ -43,6 +47,8 @@ if (today.date !== todayStr()) {
   if (today.entries.length) finalizeDay(today.date, today.entries);
   today = { date: todayStr(), entries: [] };
 }
+
+if (addedNewDefaultFoods) save();
 
 function save() {
   localStorage.setItem("dt_templates", JSON.stringify(templates));
@@ -623,6 +629,8 @@ function renderNutrition() {
 
   if (settings.proteinMode === "lbm") html += `<div class="section-note">Protein target is calculated from your latest body-fat entry (lean mass &times; ${settings.proteinPerKgLBM}g/kg). Update it in Body, or change the mode in Data.</div>`;
 
+  html += renderGapCard(t);
+
   document.getElementById("nutrition").innerHTML = html;
 
   if (totalMacroCal > 0) {
@@ -642,6 +650,85 @@ function nutrientRow(n, t) {
     <div class="metric-label"><span>${NUTRIENT_META[n].label}</span><span class="val">${round1(val)}${target ? ` / ${round1(target)}` : ""} ${NUTRIENT_META[n].unit}</span></div>
     <div class="progress"><div class="bar ${over ? 'over' : ''}" style="width:${pct}%"></div></div>
   </div>`;
+}
+
+/* ============================================================
+   "Fill the Gap" — suggests quantities of foods/supplements from
+   the library to close today's remaining nutrient targets.
+   ============================================================ */
+
+function nutritionGapSuggestions(t) {
+  let gap = n => Math.max(0, (targetFor(n) || 0) - (t[n] || 0));
+  let lines = [];
+
+  // Omega-3 is special-cased: a fixed EPA/DHA capsule first, then
+  // ground flaxseed to cover whatever ALA is still short after that.
+  let omega3Gap = gap("omega3");
+  if (omega3Gap > 0.05) {
+    let tabletFood = foods.find(f => f.name === "Omega-3 EPA/DHA (Tata 1mg)");
+    let flaxFood = foods.find(f => f.name === "Flaxseed, ground");
+    let covered = 0;
+    if (tabletFood) {
+      covered = tabletFood.per100g.omega3 || 0;
+      lines.push({ text: "1 capsule Omega-3 EPA/DHA (Tata 1mg)", note: `Omega-3 (~${round1(covered)}g EPA/DHA)` });
+    }
+    let remaining = omega3Gap - covered;
+    if (remaining > 0.1 && flaxFood && flaxFood.per100g.omega3 > 0) {
+      let grams = Math.min(21, Math.ceil((remaining * 100 / flaxFood.per100g.omega3) / 7) * 7);
+      if (grams > 0) lines.push({ text: `${grams}g Flaxseed, ground (~${Math.round(grams / 7)} tbsp)`, note: "Omega-3 (ALA)" });
+    }
+  }
+
+  FILLER_MAP.forEach(entry => {
+    let food = foods.find(f => f.name === entry.food);
+    if (!food) return;
+    let neededGrams = 0;
+    let covers = [];
+    entry.nutrients.forEach(n => {
+      let g = gap(n);
+      let per100 = food.per100g[n] || 0;
+      if (g > 0 && per100 > 0) {
+        covers.push(n);
+        neededGrams = Math.max(neededGrams, g * 100 / per100);
+      }
+    });
+    if (!covers.length) return;
+    neededGrams = Math.min(entry.maxGrams, Math.ceil(neededGrams / entry.roundTo) * entry.roundTo);
+    if (neededGrams <= 0) return;
+    let qty = entry.niceUnit
+      ? `${Math.ceil(neededGrams / entry.niceUnit.grams)} ${entry.niceUnit.label}${Math.ceil(neededGrams / entry.niceUnit.grams) > 1 ? "s" : ""} (~${neededGrams}g)`
+      : `${neededGrams}g`;
+    lines.push({ text: `${qty} ${food.name}`, note: covers.map(n => NUTRIENT_META[n].label).join(", ") });
+  });
+
+  FILLER_SUPPLEMENTS.forEach(entry => {
+    let food = foods.find(f => f.name === entry.food);
+    if (!food) return;
+    let units = 0, covers = [];
+    entry.nutrients.forEach(n => {
+      let g = gap(n);
+      let per = food.per100g[n] || 0;
+      if (g > 0 && per > 0) { covers.push(n); units = Math.max(units, Math.ceil(g / per)); }
+    });
+    if (!covers.length) return;
+    units = Math.min(entry.maxUnits, units);
+    lines.push({ text: `${units} ${entry.unitLabel}${units > 1 ? "s" : ""} ${food.name}`, note: covers.map(n => NUTRIENT_META[n].label).join(", ") });
+  });
+
+  return lines;
+}
+
+function renderGapCard(t) {
+  let lines = nutritionGapSuggestions(t);
+  let html = `<div class="card"><h3>Fill the Gap</h3>`;
+  if (!lines.length) {
+    html += `<div class="empty">You're on track — no notable gaps right now.</div>`;
+  } else {
+    html += `<div class="section-note">Rough suggestions to close today's remaining targets, based on your Foods library. Supplement doses are typical approximations — edit them in the Foods tab to match your product's actual label.</div>`;
+    lines.forEach(l => html += `<div class="today-item"><div>${escapeHtml(l.text)}</div><div class="meta">${escapeHtml(l.note)}</div></div>`);
+  }
+  html += `</div>`;
+  return html;
 }
 
 /* ============================================================

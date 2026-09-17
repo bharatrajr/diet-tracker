@@ -1,4 +1,4 @@
-const CACHE = "diet-tracker-v5";
+const CACHE = "diet-tracker-v6";
 const ASSETS = [
   "./",
   "./index.html",
