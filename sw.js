@@ -1,4 +1,4 @@
-const CACHE = "diet-tracker-v9";
+const CACHE = "diet-tracker-v10";
 const ASSETS = [
   "./",
   "./index.html",
@@ -13,7 +13,9 @@ const ASSETS = [
 
 self.addEventListener("install", e => {
   e.waitUntil(
-    caches.open(CACHE).then(cache => cache.addAll(ASSETS)).catch(() => {})
+    caches.open(CACHE).then(cache =>
+      Promise.allSettled(ASSETS.map(a => fetch(a, { cache: "no-cache" }).then(res => cache.put(a, res))))
+    )
   );
   self.skipWaiting();
 });
@@ -39,6 +41,18 @@ self.addEventListener("fetch", e => {
           return res;
         })
         .catch(() => cached);
+    })
+  );
+});
+
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  e.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(clientList => {
+      for (const client of clientList) {
+        if ("focus" in client) return client.focus();
+      }
+      if (self.clients.openWindow) return self.clients.openWindow("./");
     })
   );
 });

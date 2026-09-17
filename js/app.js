@@ -26,9 +26,11 @@ let bodyPhotos = load("dt_bodyPhotos", []);
 let bodyPhotosUnlocked = false;
 let bodyCompareSelection = [];
 let water = load("dt_water", {});
-let settings = Object.assign({ targets: Object.assign({}, DEFAULT_TARGETS), proteinMode: "manual", proteinPerKgLBM: 2, waterTarget: 8, theme: "clinical", bodyPin: "" }, load("dt_settings", {}));
+let settings = Object.assign({ targets: Object.assign({}, DEFAULT_TARGETS), proteinMode: "manual", proteinPerKgLBM: 2, waterTarget: 8, theme: "clinical", bodyPin: "", notifyNutrients: {} }, load("dt_settings", {}));
 if (!settings.targets) settings.targets = Object.assign({}, DEFAULT_TARGETS);
 ALL_NUTRIENTS.forEach(n => { if (settings.targets[n] === undefined) settings.targets[n] = DEFAULT_TARGETS[n]; });
+if (!settings.notifyNutrients) settings.notifyNutrients = {};
+if (!Array.isArray(settings.notifiedNutrients)) settings.notifiedNutrients = [];
 
 let mealSearch = "";
 let mealFilter = "All";
@@ -172,6 +174,7 @@ function readAndResizeImage(file, maxDim, cb) {
    ============================================================ */
 
 function renderMeals() {
+  checkNutrientAlerts();
   let filtered = templates
     .map((m, i) => ({ m, i }))
     .filter(({ m }) => mealFilter === "All" || m.category === mealFilter)
@@ -473,7 +476,7 @@ function renderFoods() {
     html += `<div class="card">
       <div class="spread"><b>${f.pinned ? "&#128204; " : ""}${escapeHtml(f.name)}</b><span class="tag">${f.category || "Other"}</span></div>
       <div class="ingredients">Per 100g: ${round1(f.per100g.cal)} kcal &middot; P ${round1(f.per100g.protein)}g &middot; C ${round1(f.per100g.carbs)}g &middot; F ${round1(f.per100g.fat)}g</div>
-      <div class="row">${(f.presets || []).map((p, pi) => `<button class="secondary small" onclick="logFoodPreset(${i},${pi})">${escapeHtml(p.label)}</button>`).join("")}</div>
+      <div class="row">${(f.presets || []).map((p, pi) => `<button class="secondary small" onclick="openLogFoodPreset(${i},${pi})">${escapeHtml(p.label)}</button>`).join("")}</div>
       <div class="row" style="margin-top:8px">
         <button class="edit small" onclick="openFoodForm(${i})">Edit</button>
         <button class="secondary small" onclick="toggleFoodPin(${i})">${f.pinned ? "Unpin" : "Pin"}</button>
@@ -487,15 +490,35 @@ function renderFoods() {
 
 function toggleFoodPin(i) { foods[i].pinned = !foods[i].pinned; save(); renderFoods(); }
 
-function logFoodPreset(i, pi) {
+function openLogFoodPreset(i, pi) {
   let f = foods[i], p = f.presets[pi];
-  let factor = p.grams / 100;
+  document.getElementById("overlayRoot").innerHTML = `
+  <div class="overlay" onclick="if(event.target===this)closeOverlay()">
+    <div class="sheet">
+      <div class="sheet-title">Add "${escapeHtml(f.name)}" (${escapeHtml(p.label)})</div>
+      <label>Quantity / multiplier</label>
+      <input id="fq_qty" type="number" step="0.25" min="0" value="1">
+      <label>Category for this log entry</label>
+      <select id="fq_cat">${CATEGORIES.map(c => `<option ${c === "Snack" ? "selected" : ""}>${c}</option>`).join("")}</select>
+      <div class="row" style="margin-top:14px">
+        <button onclick="confirmLogFoodPreset(${i},${pi})">Add to today</button>
+        <button class="secondary" onclick="closeOverlay()">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function confirmLogFoodPreset(i, pi) {
+  let f = foods[i], p = f.presets[pi];
+  let qty = Number(document.getElementById("fq_qty").value) || 1;
+  let category = document.getElementById("fq_cat").value;
+  let factor = (p.grams / 100) * qty;
   today.entries.push({
-    name: `${f.name} (${p.label})`, category: "Snack", servings: 1, photo: null,
+    name: `${f.name} (${p.label})`, category, servings: qty, photo: null,
     time: new Date().toTimeString().slice(0, 5),
     nutrients: scaleNutrients(f.per100g, factor)
   });
-  save(); tab("meals");
+  save(); closeOverlay(); tab("meals");
 }
 
 function deleteFood(i) {
@@ -627,7 +650,8 @@ const NUTRITION_SUBTABS = [
   { id: "byfood", label: "By Food" },
   { id: "limit", label: "Limit List" },
   { id: "density", label: "Density" },
-  { id: "planner", label: "Planner" }
+  { id: "planner", label: "Planner" },
+  { id: "alerts", label: "Alerts" }
 ];
 
 let nutritionSubTab = "overview";
@@ -648,6 +672,7 @@ function renderNutrition() {
   else if (nutritionSubTab === "limit") html += renderLimitList();
   else if (nutritionSubTab === "density") html += renderDensityList();
   else if (nutritionSubTab === "planner") html += renderPlanner();
+  else if (nutritionSubTab === "alerts") html += renderNutrientAlerts();
   else {
     let overview = renderNutritionOverview(t);
     html += overview.html;
@@ -823,6 +848,7 @@ function renderPlanner() {
     <button class="secondary small" onclick="addPlannerRow()">+ Add food</button>
   </div>
   <div class="card" id="plannerTotals"><h3>Estimated nutrition</h3><div class="empty">Add a food above to estimate.</div></div>
+  <div class="card" id="plannerGapImpact" style="display:none"></div>
   <div class="card">
     <label>Name</label>
     <input id="plannerName" placeholder="e.g. Post-workout meal">
@@ -870,9 +896,11 @@ function recomputePlanner() {
   plannerItems = items;
 
   let totalsEl = document.getElementById("plannerTotals");
+  let gapEl = document.getElementById("plannerGapImpact");
   if (!totalsEl) return;
   if (!items.length) {
     totalsEl.innerHTML = `<h3>Estimated nutrition</h3><div class="empty">Add a food above to estimate.</div>`;
+    if (gapEl) gapEl.style.display = "none";
     return;
   }
   let html = `<h3>Estimated nutrition</h3>`;
@@ -884,6 +912,48 @@ function recomputePlanner() {
   [...NUTRIENT_GROUPS.vitamins, ...NUTRIENT_GROUPS.minerals].forEach(n => html += nutrientRow(n, total));
   html += `</div>`;
   totalsEl.innerHTML = html;
+
+  if (gapEl) {
+    gapEl.style.display = "block";
+    gapEl.innerHTML = renderPlannerGapImpact(total);
+  }
+}
+
+function plannerGapRow(n, gapBefore, provided) {
+  let pct = gapBefore > 0 ? Math.min(100, (provided / gapBefore) * 100) : 0;
+  let closed = provided >= gapBefore;
+  return `<div class="metric-row">
+    <div class="metric-label"><span>${NUTRIENT_META[n].label}${closed ? ` <span class="tag">Closes gap</span>` : ""}</span><span class="val">${round1(provided)} / ${round1(gapBefore)} ${NUTRIENT_META[n].unit} needed</span></div>
+    <div class="progress"><div class="bar" style="width:${pct}%"></div></div>
+  </div>`;
+}
+
+function renderPlannerGapImpact(total) {
+  let t = sumEntries(today.entries);
+  let rows = ALL_NUTRIENTS.map(n => {
+    let target = targetFor(n) || 0;
+    let gapBefore = Math.max(0, target - (t[n] || 0));
+    return { n, gapBefore, provided: total[n] || 0 };
+  }).filter(r => r.gapBefore > 0);
+
+  if (!rows.length) {
+    return `<h3>Today's deficiency coverage</h3><div class="empty">No remaining deficiencies today — you're already at or above target on everything tracked.</div>`;
+  }
+
+  let helping = rows.filter(r => r.provided > 0).sort((a, b) => (b.provided / b.gapBefore) - (a.provided / a.gapBefore));
+  let notHelping = rows.filter(r => r.provided <= 0);
+
+  let html = `<h3>Today's deficiency coverage</h3>
+    <div class="section-note">How this combination stacks up against what's still short of today's targets.</div>`;
+  if (!helping.length) {
+    html += `<div class="empty">This combination doesn't touch any of today's remaining deficiencies.</div>`;
+  } else {
+    helping.forEach(r => html += plannerGapRow(r.n, r.gapBefore, r.provided));
+  }
+  if (notHelping.length) {
+    html += `<div class="section-note" style="margin-top:10px">Still not covered: ${notHelping.map(r => NUTRIENT_META[r.n].label).join(", ")}</div>`;
+  }
+  return html;
 }
 
 function logPlannerToToday() {
@@ -930,6 +1000,87 @@ function nutrientRow(n, t) {
     <div class="metric-label"><span>${NUTRIENT_META[n].label}</span><span class="val">${round1(val)}${target ? ` / ${round1(target)}` : ""} ${NUTRIENT_META[n].unit}</span></div>
     <div class="progress"><div class="bar ${over ? 'over' : ''}" style="width:${pct}%"></div></div>
   </div>`;
+}
+
+/* ---- Alerts: per-nutrient low-RDA browser notifications ---- */
+
+const NOTIFY_THRESHOLD_PCT = 70;
+
+function renderNutrientAlerts() {
+  let t = sumEntries(today.entries);
+  let html = `<div class="card">
+    <h3>Low-nutrient notifications</h3>
+    <div class="section-note">Turn on any nutrient below. If it's still under ${NOTIFY_THRESHOLD_PCT}% of your daily target, Diet Tracker sends a browser notification &mdash; tap it to jump back into the app.</div>
+    ${renderNotifyPermissionRow()}
+  </div>`;
+
+  let groupBlock = (title, keys) => {
+    let rows = keys.map(n => {
+      let target = targetFor(n), val = t[n] || 0;
+      let pct = target ? round1(val / target * 100) : null;
+      return `<label style="display:flex;align-items:center;gap:8px;margin:10px 0 4px">
+        <input type="checkbox" ${settings.notifyNutrients[n] ? "checked" : ""} style="width:auto" onchange="toggleNutrientAlert('${n}')">
+        <span style="font-size:13px;color:var(--text);flex:1">${NUTRIENT_META[n].label}</span>
+        <span class="meta">${pct !== null ? pct + "%" : "no target"}</span>
+      </label>`;
+    }).join("");
+    return `<div class="card"><h3>${title}</h3>${rows}</div>`;
+  };
+
+  html += groupBlock("Macros", NUTRIENT_GROUPS.macro);
+  html += groupBlock("Vitamins", NUTRIENT_GROUPS.vitamins);
+  html += groupBlock("Minerals", NUTRIENT_GROUPS.minerals);
+  return html;
+}
+
+function renderNotifyPermissionRow() {
+  if (!("Notification" in window)) return `<div class="empty">Notifications aren't supported in this browser.</div>`;
+  let perm = Notification.permission;
+  if (perm === "granted") return `<div class="tag">Notifications enabled</div>`;
+  if (perm === "denied") return `<div class="empty">Notifications are blocked for this site in your browser settings.</div>`;
+  return `<button class="secondary small" onclick="requestNotifyPermission()">Enable browser notifications</button>`;
+}
+
+function requestNotifyPermission() {
+  Notification.requestPermission().then(() => renderNutrition());
+}
+
+function toggleNutrientAlert(n) {
+  settings.notifyNutrients[n] = !settings.notifyNutrients[n];
+  save();
+  checkNutrientAlerts();
+}
+
+function checkNutrientAlerts() {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+  let enabled = ALL_NUTRIENTS.filter(n => settings.notifyNutrients[n]);
+  if (!enabled.length) return;
+
+  let ds = todayStr();
+  if (settings.notifiedDate !== ds) { settings.notifiedDate = ds; settings.notifiedNutrients = []; }
+
+  let t = sumEntries(today.entries);
+  let low = enabled.filter(n => {
+    let target = targetFor(n);
+    if (!target || settings.notifiedNutrients.includes(n)) return false;
+    return (t[n] || 0) / target * 100 < NOTIFY_THRESHOLD_PCT;
+  });
+  if (!low.length) return;
+
+  settings.notifiedNutrients.push(...low);
+  save();
+
+  let body = low.map(n => NUTRIENT_META[n].label).join(", ") + ` ${low.length > 1 ? "are" : "is"} under ${NOTIFY_THRESHOLD_PCT}% of today's target.`;
+  fireNotification("Nutrient check-in", body);
+}
+
+function fireNotification(title, body) {
+  let opts = { body, icon: "./icons/icon.svg", tag: "dt-nutrient-alert" };
+  if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+    navigator.serviceWorker.ready.then(reg => reg.showNotification(title, opts)).catch(() => { try { new Notification(title, opts); } catch (e) {} });
+  } else {
+    try { new Notification(title, opts); } catch (e) {}
+  }
 }
 
 /* ============================================================
@@ -1458,7 +1609,9 @@ function importData(input) {
       bodyLog = data.bodyLog || [];
       if (data.bodyPhotos !== undefined) bodyPhotos = data.bodyPhotos;
       water = data.water || {};
-      settings = Object.assign({ targets: Object.assign({}, DEFAULT_TARGETS), proteinMode: "manual", proteinPerKgLBM: 2, waterTarget: 8, theme: "clinical", bodyPin: "" }, data.settings || {});
+      settings = Object.assign({ targets: Object.assign({}, DEFAULT_TARGETS), proteinMode: "manual", proteinPerKgLBM: 2, waterTarget: 8, theme: "clinical", bodyPin: "", notifyNutrients: {} }, data.settings || {});
+      if (!settings.notifyNutrients) settings.notifyNutrients = {};
+      if (!Array.isArray(settings.notifiedNutrients)) settings.notifiedNutrients = [];
       bodyPhotosUnlocked = false;
       save(); applyTheme();
       alert("Backup imported.");
@@ -1481,6 +1634,12 @@ tab("meals");
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("./sw.js").catch(() => {});
+    navigator.serviceWorker.register("./sw.js").then(reg => reg.update()).catch(() => {});
+  });
+  let swRefreshing = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (swRefreshing) return;
+    swRefreshing = true;
+    location.reload();
   });
 }
