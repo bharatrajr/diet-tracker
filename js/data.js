@@ -1,10 +1,10 @@
-﻿/* ============================================================
+/* ============================================================
    Nutrient model
    ============================================================ */
 
 const NUTRIENT_GROUPS = {
-  macro: ["cal", "protein", "carbs", "fat", "fiber", "sugar"],
-  vitamins: ["vitA", "vitC", "vitD", "vitE", "vitK", "b1", "b2", "b3", "b6", "b9", "b12"],
+  macro: ["cal", "protein", "carbs", "fat", "omega3", "fiber", "sugar"],
+  vitamins: ["vitA", "vitC", "vitD", "vitE", "vitK", "vitK2", "b1", "b2", "b3", "b6", "b9", "b12"],
   minerals: ["calcium", "iron", "magnesium", "phosphorus", "potassium", "sodium", "zinc"]
 };
 
@@ -19,13 +19,15 @@ const NUTRIENT_META = {
   protein: { label: "Protein", unit: "g" },
   carbs: { label: "Carbs", unit: "g" },
   fat: { label: "Fat", unit: "g" },
+  omega3: { label: "Omega-3", unit: "g" },
   fiber: { label: "Fiber", unit: "g" },
   sugar: { label: "Sugar", unit: "g" },
   vitA: { label: "Vitamin A", unit: "mcg" },
   vitC: { label: "Vitamin C", unit: "mg" },
   vitD: { label: "Vitamin D", unit: "mcg" },
   vitE: { label: "Vitamin E", unit: "mg" },
-  vitK: { label: "Vitamin K", unit: "mcg" },
+  vitK: { label: "Vitamin K1", unit: "mcg" },
+  vitK2: { label: "Vitamin K2", unit: "mcg" },
   b1: { label: "Thiamin (B1)", unit: "mg" },
   b2: { label: "Riboflavin (B2)", unit: "mg" },
   b3: { label: "Niacin (B3)", unit: "mg" },
@@ -43,8 +45,8 @@ const NUTRIENT_META = {
 
 // Standard adult daily reference values -- editable per user in Settings.
 const DEFAULT_TARGETS = {
-  cal: 2200, protein: 130, carbs: 300, fat: 70, fiber: 30, sugar: 50,
-  vitA: 900, vitC: 90, vitD: 15, vitE: 15, vitK: 120,
+  cal: 2200, protein: 130, carbs: 300, fat: 70, omega3: 1.6, fiber: 30, sugar: 50,
+  vitA: 900, vitC: 90, vitD: 15, vitE: 15, vitK: 120, vitK2: 100,
   b1: 1.2, b2: 1.3, b3: 16, b6: 1.7, b9: 400, b12: 2.4,
   calcium: 1000, iron: 18, magnesium: 400, phosphorus: 700, potassium: 3400, sodium: 2300, zinc: 11
 };
@@ -82,7 +84,7 @@ const DEFAULT_FOODS = [
     name: "Egg, boiled",
     category: "Protein",
     per100g: Object.assign(emptyNutrients(), {
-      cal: 155, protein: 12.6, carbs: 1.1, fat: 10.6, fiber: 0, sugar: 0.6,
+      cal: 155, protein: 12.6, carbs: 1.1, fat: 10.6, omega3: 0.07, fiber: 0, sugar: 0.6,
       vitA: 149, vitD: 2.2, vitE: 1.0, vitK: 0.3,
       b1: 0.066, b2: 0.513, b3: 0.064, b6: 0.121, b9: 44, b12: 1.11,
       calcium: 50, iron: 1.2, magnesium: 10, phosphorus: 172, potassium: 126, sodium: 124, zinc: 1.0
@@ -97,7 +99,7 @@ const DEFAULT_FOODS = [
     name: "Avocado, raw",
     category: "Fruit",
     per100g: Object.assign(emptyNutrients(), {
-      cal: 160, protein: 2.0, carbs: 8.5, fat: 14.7, fiber: 6.7, sugar: 0.7,
+      cal: 160, protein: 2.0, carbs: 8.5, fat: 14.7, omega3: 0.11, fiber: 6.7, sugar: 0.7,
       vitA: 7, vitC: 10, vitE: 2.1, vitK: 21,
       b1: 0.067, b2: 0.13, b3: 1.74, b6: 0.26, b9: 81,
       calcium: 12, iron: 0.55, magnesium: 29, phosphorus: 52, potassium: 485, sodium: 7, zinc: 0.64
@@ -213,8 +215,8 @@ Return ONLY a single valid JSON object, no other text, no markdown fences, using
   "name": "${name}",
   "category": "Protein | Dairy | Fruit | Vegetable | Grain | Legume | Fat | Other",
   "per100g": {
-    "cal": kcal, "protein": g, "carbs": g, "fat": g, "fiber": g, "sugar": g,
-    "vitA": mcg_RAE, "vitC": mg, "vitD": mcg, "vitE": mg, "vitK": mcg,
+    "cal": kcal, "protein": g, "carbs": g, "fat": g, "omega3": g, "fiber": g, "sugar": g,
+    "vitA": mcg_RAE, "vitC": mg, "vitD": mcg, "vitE": mg, "vitK": mcg_K1, "vitK2": mcg_K2,
     "b1": mg, "b2": mg, "b3": mg, "b6": mg, "b9": mcg_folate, "b12": mcg,
     "calcium": mg, "iron": mg, "magnesium": mg, "phosphorus": mg, "potassium": mg, "sodium": mg, "zinc": mg
   },
@@ -224,7 +226,7 @@ Return ONLY a single valid JSON object, no other text, no markdown fences, using
   ]
 }
 
-Use 0 for any nutrient with no significant amount -- never omit a key. Base the numbers on USDA FoodData Central or, for Indian foods, ICMR-NIN Indian Food Composition Tables. Return nothing except that JSON object.`;
+Use 0 for any nutrient with no significant amount -- never omit a key. omega3 should be total EPA+DHA+ALA in grams. vitK2 is menaquinone (MK-4/MK-7) in micrograms, separate from vitK (phylloquinone/K1). Base the numbers on USDA FoodData Central or, for Indian foods, ICMR-NIN Indian Food Composition Tables. Return nothing except that JSON object.`;
 }
 
 // Extracts the first {...} block from pasted text and parses it as a food record.
