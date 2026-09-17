@@ -624,12 +624,14 @@ function parseAndPrefillAiFood() {
 const NUTRITION_SUBTABS = [
   { id: "overview", label: "Overview" },
   { id: "contrib", label: "By Nutrient" },
+  { id: "byfood", label: "By Food" },
   { id: "limit", label: "Limit List" },
   { id: "density", label: "Density" }
 ];
 
 let nutritionSubTab = "overview";
 let contribNutrient = "protein";
+let byFoodEntryIndex = 0;
 
 function renderNutrition() {
   let t = sumEntries(today.entries);
@@ -640,6 +642,7 @@ function renderNutrition() {
 
   let totalMacroCal = 0;
   if (nutritionSubTab === "contrib") html += renderNutrientContributors(t);
+  else if (nutritionSubTab === "byfood") html += renderByFood();
   else if (nutritionSubTab === "limit") html += renderLimitList();
   else if (nutritionSubTab === "density") html += renderDensityList();
   else {
@@ -710,6 +713,44 @@ function renderNutrientContributors(t) {
   return html;
 }
 
+/* ---- By Food: what nutrients a specific logged item is giving you ---- */
+
+function renderByFood() {
+  if (!today.entries.length) {
+    return `<div class="card"><div class="empty">Log something today to see its nutrient breakdown.</div></div>`;
+  }
+  if (byFoodEntryIndex >= today.entries.length) byFoodEntryIndex = 0;
+
+  let html = `<div class="card">
+    <label>Food</label>
+    <select onchange="byFoodEntryIndex=Number(this.value);renderNutrition()">
+      ${today.entries.map((e, i) => `<option value="${i}" ${i === byFoodEntryIndex ? "selected" : ""}>${escapeHtml(e.name)}</option>`).join("")}
+    </select>
+  </div>`;
+
+  let e = today.entries[byFoodEntryIndex];
+  let rows = ALL_NUTRIENTS
+    .filter(n => (e.nutrients[n] || 0) > 0)
+    .sort((a, b) => {
+      let ta = targetFor(a), tb = targetFor(b);
+      let pa = ta ? e.nutrients[a] / ta : 0, pb = tb ? e.nutrients[b] / tb : 0;
+      return pb - pa;
+    });
+
+  html += `<div class="card"><h3>${escapeHtml(e.name)} — nutrients provided</h3>`;
+  if (!rows.length) {
+    html += `<div class="empty">No nutrient data recorded for this entry.</div>`;
+  } else {
+    rows.forEach(n => {
+      let val = e.nutrients[n], target = targetFor(n);
+      let pct = target ? round1(val / target * 100) : null;
+      html += `<div class="today-item"><div>${NUTRIENT_META[n].label}</div><div class="meta">${round1(val)} ${NUTRIENT_META[n].unit}${pct !== null ? ` &middot; ${pct}% of target` : ""}</div></div>`;
+    });
+  }
+  html += `</div>`;
+  return html;
+}
+
 /* ---- Limit List: today's biggest calorie and sugar sources ---- */
 
 function renderLimitList() {
@@ -740,7 +781,7 @@ function nutrientDensityScore(per100g) {
   if (!cal || cal <= 0) return null;
   let score = 0;
   ALL_NUTRIENTS.forEach(n => {
-    if (n === "cal") return;
+    if (n === "cal" || n === "sugar") return;
     let target = settings.targets[n];
     if (target > 0) score += (per100g[n] || 0) / target;
   });
@@ -754,7 +795,7 @@ function renderDensityList() {
     .filter(r => r.score !== null)
     .sort((a, b) => b.score - a.score);
 
-  let html = `<div class="section-note">Ranks your Foods library by overall nutrient coverage per 100 calories — higher means more vitamins/minerals/protein for the calories it costs.</div>
+  let html = `<div class="section-note">Ranks your Foods library by overall nutrient coverage per 100 calories (sugar excluded from the score) — higher means more vitamins/minerals/protein for the calories it costs.</div>
   <div class="card"><h3>Most nutrition per calorie</h3>`;
   if (!rows.length) html += `<div class="empty">Add some foods with calories to your library to see this ranking.</div>`;
   else rows.forEach((r, idx) => html += `<div class="today-item"><div>${idx + 1}. ${escapeHtml(r.name)}</div><div class="meta">${round1(r.cal)} kcal/100g &middot; score ${round1(r.score * 100)}</div></div>`);
