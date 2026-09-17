@@ -18,8 +18,11 @@ let foods = load("dt_foods", DEFAULT_FOODS);
 let today = load("dt_today", { date: todayStr(), entries: [] });
 let history = load("dt_history", []);
 let bodyLog = load("dt_bodyLog", []);
+let bodyPhotos = load("dt_bodyPhotos", []);
+let bodyPhotosUnlocked = false;
+let bodyCompareSelection = [];
 let water = load("dt_water", {});
-let settings = Object.assign({ targets: Object.assign({}, DEFAULT_TARGETS), proteinMode: "manual", proteinPerKgLBM: 2, waterTarget: 8, theme: "night" }, load("dt_settings", {}));
+let settings = Object.assign({ targets: Object.assign({}, DEFAULT_TARGETS), proteinMode: "manual", proteinPerKgLBM: 2, waterTarget: 8, theme: "night", bodyPin: "" }, load("dt_settings", {}));
 if (!settings.targets) settings.targets = Object.assign({}, DEFAULT_TARGETS);
 ALL_NUTRIENTS.forEach(n => { if (settings.targets[n] === undefined) settings.targets[n] = DEFAULT_TARGETS[n]; });
 
@@ -47,6 +50,7 @@ function save() {
   localStorage.setItem("dt_today", JSON.stringify(today));
   localStorage.setItem("dt_history", JSON.stringify(history));
   localStorage.setItem("dt_bodyLog", JSON.stringify(bodyLog));
+  localStorage.setItem("dt_bodyPhotos", JSON.stringify(bodyPhotos));
   localStorage.setItem("dt_water", JSON.stringify(water));
   localStorage.setItem("dt_settings", JSON.stringify(settings));
 }
@@ -268,7 +272,7 @@ function duplicateMeal(i) {
 
 function openMealForm(i) {
   let editing = i !== undefined && i !== null && i >= 0;
-  let m = editing ? templates[i] : { name: "", category: "Breakfast", photo: null, ingredients: [], nutrients: emptyNutrients() };
+  let m = editing ? templates[i] : { name: "", category: "Breakfast", photo: null, foodItems: [], ingredients: [], nutrients: emptyNutrients() };
 
   let macroRows = NUTRIENT_GROUPS.macro.map(n => `
     <label>${NUTRIENT_META[n].label} (${NUTRIENT_META[n].unit})</label>
@@ -295,10 +299,17 @@ function openMealForm(i) {
         <input class="full" id="f_name" value="${escapeAttr(m.name)}">
         <label class="full">Category</label>
         <select class="full" id="f_cat">${CATEGORIES.map(c => `<option ${c === m.category ? "selected" : ""}>${c}</option>`).join("")}</select>
+      </div>
 
+      <label class="full" style="margin-top:14px">Build from stored foods (quantity by weight)</label>
+      <div class="section-note">Pick foods from your library and enter grams — macros and micros below fill in automatically as you add or edit rows.</div>
+      <div id="mealFoodRows"></div>
+      <button class="secondary small" onclick="addMealFoodRow()">+ Add food from library</button>
+
+      <div class="form-grid" style="margin-top:12px">
         ${macroRows}
 
-        <label class="full">Ingredients (comma separated)</label>
+        <label class="full">Ingredients (auto-filled from foods above, or type your own)</label>
         <input class="full" id="f_ing" value="${escapeAttr((m.ingredients || []).join(", "))}">
       </div>
 
@@ -313,6 +324,50 @@ function openMealForm(i) {
       </div>
     </div>
   </div>`;
+
+  window._mealFoodCount = 0;
+  (m.foodItems || []).forEach(it => addMealFoodRow(it.food, it.grams));
+}
+
+function addMealFoodRow(food, grams) {
+  let idx = window._mealFoodCount++;
+  let options = foods.map(f => `<option value="${escapeAttr(f.name)}" ${food === f.name ? "selected" : ""}>${escapeHtml(f.name)}</option>`).join("");
+  document.getElementById("mealFoodRows").insertAdjacentHTML("beforeend", `
+    <div class="row" id="mf_row_${idx}" style="margin-bottom:6px">
+      <select style="flex:2" id="mf_food_${idx}" onchange="recomputeMealFromFoods()">
+        <option value="">Select food...</option>${options}
+      </select>
+      <input style="flex:1" id="mf_grams_${idx}" type="number" min="0" step="1" placeholder="grams" value="${grams || ''}" oninput="recomputeMealFromFoods()">
+      <button class="delete small" onclick="removeMealFoodRow(${idx})">&times;</button>
+    </div>`);
+}
+
+function removeMealFoodRow(idx) {
+  let row = document.getElementById(`mf_row_${idx}`);
+  if (row) row.remove();
+  recomputeMealFromFoods();
+}
+
+function recomputeMealFromFoods() {
+  let total = emptyNutrients();
+  let parts = [];
+  let any = false;
+  for (let idx = 0; idx < window._mealFoodCount; idx++) {
+    let sel = document.getElementById(`mf_food_${idx}`);
+    let gramsEl = document.getElementById(`mf_grams_${idx}`);
+    if (!sel || !gramsEl || !sel.value) continue;
+    let grams = Number(gramsEl.value) || 0;
+    let food = foods.find(f => f.name === sel.value);
+    if (!food || grams <= 0) continue;
+    any = true;
+    let factor = grams / 100;
+    ALL_NUTRIENTS.forEach(n => total[n] += (food.per100g[n] || 0) * factor);
+    parts.push(`${grams}g ${food.name}`);
+  }
+  if (!any) return;
+  ALL_NUTRIENTS.forEach(n => { let el = document.getElementById(`f_${n}`); if (el) el.value = round1(total[n]); });
+  let ingEl = document.getElementById("f_ing");
+  if (ingEl) ingEl.value = parts.join(", ");
 }
 
 function handleMealPhoto(input) {
@@ -330,11 +385,17 @@ function clearMealPhoto() {
 function saveMealForm(i) {
   let nutrients = emptyNutrients();
   ALL_NUTRIENTS.forEach(n => { let el = document.getElementById(`f_${n}`); if (el) nutrients[n] = Number(el.value) || 0; });
+  let foodItems = [];
+  for (let idx = 0; idx < (window._mealFoodCount || 0); idx++) {
+    let sel = document.getElementById(`mf_food_${idx}`), gramsEl = document.getElementById(`mf_grams_${idx}`);
+    if (sel && gramsEl && sel.value && Number(gramsEl.value) > 0) foodItems.push({ food: sel.value, grams: Number(gramsEl.value) });
+  }
   let m = {
     name: document.getElementById("f_name").value.trim() || "Unnamed Meal",
     category: document.getElementById("f_cat").value,
     photo: document.getElementById("f_photo_data").value || null,
     nutrients,
+    foodItems,
     ingredients: document.getElementById("f_ing").value.split(",").map(s => s.trim()).filter(Boolean)
   };
   if (i >= 0) templates[i] = m; else templates.push(m);
@@ -591,16 +652,34 @@ function renderBody() {
   let latest = bodyLog.length ? bodyLog[bodyLog.length - 1] : { weight: 70, bf: 20 };
   let html = `<h2 class="page-title">Body</h2>
   <div class="card"><h3>Log an entry</h3>
-    <label>Weight (kg)</label><input id="bw" type="number" step="0.1" value="${latest.weight}">
-    <label>Body fat %</label><input id="bbf" type="number" step="0.1" value="${latest.bf}">
+    <label>Weight (kg)</label><input id="bw" type="number" step="0.1" value="${latest.weight ?? ''}">
+    <label>Body fat %</label><input id="bbf" type="number" step="0.1" value="${latest.bf ?? ''}">
+
+    <div class="nutrient-section-toggle" onclick="document.getElementById('bodyMoreBlock').style.display=document.getElementById('bodyMoreBlock').style.display==='none'?'grid':'none'">
+      <span>More measurements — tap to expand</span><span>&#8964;</span>
+    </div>
+    <div class="form-grid" id="bodyMoreBlock" style="display:none">
+      ${BODY_METRICS.map(m => `<label>${m.label} (${m.unit})</label><input id="bm_${m.id}" type="number" step="0.1" value="${latest[m.id] ?? ''}">`).join("")}
+      <label class="full">Notes</label>
+      <textarea class="full" id="bnotes">${escapeHtml(latest.notes || "")}</textarea>
+    </div>
+
     <button style="margin-top:12px" onclick="saveBodyEntry()">Save entry for today</button>
   </div>`;
 
   if (bodyLog.length > 1) html += `<div class="card"><h3>Weight trend</h3><canvas id="weightChart" height="160"></canvas></div>`;
 
+  html += renderBodyPhotoCard();
+
   html += `<div class="card"><h3>History</h3>`;
   if (!bodyLog.length) html += `<div class="empty">No entries yet.</div>`;
-  else [...bodyLog].reverse().slice(0, 20).forEach(b => html += `<div class="today-item"><div>${b.date}</div><div class="meta">${b.weight}kg &middot; ${b.bf}% BF</div></div>`);
+  else [...bodyLog].reverse().slice(0, 20).forEach(b => {
+    let extras = BODY_METRICS.filter(m => b[m.id] !== undefined && b[m.id] !== null && b[m.id] !== "").map(m => `${m.label} ${b[m.id]}${m.unit}`).join(" &middot; ");
+    html += `<div class="today-item">
+      <div>${b.date}${b.notes ? `<div class="meta">${escapeHtml(b.notes)}</div>` : ""}</div>
+      <div class="meta">${b.weight}kg${b.bf ? ` &middot; ${b.bf}% BF` : ""}${extras ? ` &middot; ${extras}` : ""}</div>
+    </div>`;
+  });
   html += `</div>`;
 
   document.getElementById("body").innerHTML = html;
@@ -619,9 +698,228 @@ function saveBodyEntry() {
   let weight = Number(document.getElementById("bw").value), bf = Number(document.getElementById("bbf").value);
   if (!weight) { alert("Enter a weight."); return; }
   let date = todayStr(), existing = bodyLog.find(b => b.date === date);
-  if (existing) { existing.weight = weight; existing.bf = bf; } else bodyLog.push({ date, weight, bf });
+  let entry = existing || { date };
+  entry.weight = weight;
+  entry.bf = bf;
+  BODY_METRICS.forEach(m => {
+    let el = document.getElementById(`bm_${m.id}`);
+    if (el && el.value !== "") entry[m.id] = Number(el.value);
+    else delete entry[m.id];
+  });
+  let notesEl = document.getElementById("bnotes");
+  entry.notes = notesEl ? notesEl.value.trim() : "";
+  if (!existing) bodyLog.push(entry);
   bodyLog.sort((a, b) => a.date.localeCompare(b.date));
   save(); renderBody();
+}
+
+/* ============================================================
+   BODY PROGRESS PHOTOS — PIN-gated, saved after crop/zoom
+   ============================================================ */
+
+async function sha256Hex(str) {
+  let buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+function renderBodyPhotoCard() {
+  let html = `<div class="card" id="bodyPhotoCard"><div class="spread"><h3>Progress Photos</h3>`;
+  if (bodyPhotosUnlocked) html += `<button class="secondary small" onclick="lockBodyPhotos()">Lock</button>`;
+  html += `</div>`;
+
+  if (!settings.bodyPin) {
+    html += `<div class="section-note">Set a PIN to keep progress photos hidden on this device. You'll need it every time you want to view or add one.</div>
+    <label>New PIN</label><input id="bp_newpin1" type="password" inputmode="numeric" autocomplete="off">
+    <label>Confirm PIN</label><input id="bp_newpin2" type="password" inputmode="numeric" autocomplete="off">
+    <button style="margin-top:10px" onclick="setBodyPin()">Set PIN</button>`;
+  } else if (!bodyPhotosUnlocked) {
+    html += `<div class="empty">Enter your PIN to view photos.</div>
+    <input id="bp_pin_input" type="password" inputmode="numeric" autocomplete="off" placeholder="PIN" onkeydown="if(event.key==='Enter')unlockBodyPhotos()">
+    <button style="margin-top:10px" onclick="unlockBodyPhotos()">Unlock</button>`;
+  } else {
+    html += `<div class="row"><button onclick="openBodyPhotoCapture()">+ Add photo</button><button class="secondary small" onclick="resetBodyPin()">Reset PIN</button></div>`;
+    if (!bodyPhotos.length) {
+      html += `<div class="empty">No photos yet.</div>`;
+    } else {
+      if (bodyCompareSelection.length === 2) {
+        let a = bodyPhotos.find(p => p.id === bodyCompareSelection[0]);
+        let b = bodyPhotos.find(p => p.id === bodyCompareSelection[1]);
+        if (a && b) {
+          html += `<div class="section-note" style="margin-top:10px">Comparing</div>
+          <div class="compare-wrap">
+            <div><img class="compare-img" src="${a.data}"><div class="meta">${a.date}${a.label ? " &middot; " + escapeHtml(a.label) : ""}</div></div>
+            <div><img class="compare-img" src="${b.data}"><div class="meta">${b.date}${b.label ? " &middot; " + escapeHtml(b.label) : ""}</div></div>
+          </div>
+          <button class="secondary small" onclick="bodyCompareSelection=[];renderBody()">Clear comparison</button>`;
+        }
+      }
+      html += `<div class="section-note" style="margin-top:10px">Tap two photos to compare them side by side.</div><div class="photo-grid">`;
+      [...bodyPhotos].reverse().forEach(p => {
+        let sel = bodyCompareSelection.includes(p.id);
+        html += `<div class="photo-tile ${sel ? "selected" : ""}" onclick="toggleCompare(${p.id})">
+          <img src="${p.data}">
+          <div class="meta">${p.date}${p.label ? " &middot; " + escapeHtml(p.label) : ""}</div>
+          <button class="delete small" onclick="event.stopPropagation();deleteBodyPhoto(${p.id})">&times;</button>
+        </div>`;
+      });
+      html += `</div>`;
+    }
+  }
+  html += `</div>`;
+  return html;
+}
+
+async function setBodyPin() {
+  let p1 = document.getElementById("bp_newpin1").value;
+  let p2 = document.getElementById("bp_newpin2").value;
+  if (!p1 || p1.length < 4) { alert("PIN must be at least 4 characters."); return; }
+  if (p1 !== p2) { alert("PINs don't match."); return; }
+  settings.bodyPin = await sha256Hex(p1);
+  save();
+  bodyPhotosUnlocked = true;
+  renderBody();
+}
+
+async function unlockBodyPhotos() {
+  let entered = document.getElementById("bp_pin_input").value;
+  let hash = await sha256Hex(entered || "");
+  if (hash === settings.bodyPin) { bodyPhotosUnlocked = true; renderBody(); }
+  else alert("Incorrect PIN.");
+}
+
+function lockBodyPhotos() {
+  bodyPhotosUnlocked = false;
+  bodyCompareSelection = [];
+  renderBody();
+}
+
+function resetBodyPin() {
+  if (!confirm("Reset your progress photo PIN? You'll be asked to set a new one — existing photos stay right where they are.")) return;
+  settings.bodyPin = "";
+  bodyPhotosUnlocked = false;
+  save(); renderBody();
+}
+
+function toggleCompare(id) {
+  let idx = bodyCompareSelection.indexOf(id);
+  if (idx >= 0) bodyCompareSelection.splice(idx, 1);
+  else {
+    bodyCompareSelection.push(id);
+    if (bodyCompareSelection.length > 2) bodyCompareSelection.shift();
+  }
+  renderBody();
+}
+
+function deleteBodyPhoto(id) {
+  if (!confirm("Delete this photo?")) return;
+  bodyPhotos = bodyPhotos.filter(p => p.id !== id);
+  bodyCompareSelection = bodyCompareSelection.filter(x => x !== id);
+  save(); renderBody();
+}
+
+/* ---- Crop/zoom capture sheet ---- */
+
+let cropState = null;
+
+function openBodyPhotoCapture() {
+  document.getElementById("overlayRoot").innerHTML = `
+  <div class="overlay" onclick="if(event.target===this)closeOverlay()">
+    <div class="sheet">
+      <div class="sheet-title">Add progress photo</div>
+      <div class="photo-upload" id="bp_upload_prompt" onclick="document.getElementById('bp_file_input').click()">Tap to choose a photo</div>
+      <input type="file" accept="image/*" id="bp_file_input" style="display:none" onchange="handleBodyPhotoSelect(this)">
+
+      <div id="bp_cropper_wrap" style="display:none">
+        <div class="crop-viewport"><canvas id="bp_crop_canvas"></canvas></div>
+        <label>Zoom</label>
+        <input type="range" id="bp_zoom" min="1" max="3" step="0.01" value="1" oninput="renderCropCanvas()">
+        <div class="section-note">Drag the photo to reposition it inside the frame.</div>
+      </div>
+
+      <label>Label (optional)</label>
+      <input id="bp_label" placeholder="e.g. Front, Side, Back">
+
+      <div class="row" style="margin-top:14px">
+        <button onclick="saveBodyPhoto()">Save photo</button>
+        <button class="secondary" onclick="closeOverlay()">Cancel</button>
+      </div>
+    </div>
+  </div>`;
+  cropState = null;
+}
+
+function handleBodyPhotoSelect(input) {
+  if (!input.files.length) return;
+  let reader = new FileReader();
+  reader.onload = e => {
+    let img = new Image();
+    img.onload = () => {
+      let canvas = document.getElementById("bp_crop_canvas");
+      canvas.width = 300; canvas.height = 400;
+      let baseScale = Math.max(canvas.width / img.width, canvas.height / img.height);
+      cropState = { img, baseScale, zoom: 1, offX: 0, offY: 0 };
+      document.getElementById("bp_upload_prompt").textContent = "Tap to choose a different photo";
+      document.getElementById("bp_cropper_wrap").style.display = "block";
+      document.getElementById("bp_zoom").value = 1;
+      renderCropCanvas();
+      wireCropEvents(canvas);
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(input.files[0]);
+}
+
+function clampCropOffset() {
+  let canvas = document.getElementById("bp_crop_canvas");
+  let scale = cropState.baseScale * cropState.zoom;
+  let dw = cropState.img.width * scale, dh = cropState.img.height * scale;
+  let maxX = Math.max(0, (dw - canvas.width) / 2);
+  let maxY = Math.max(0, (dh - canvas.height) / 2);
+  cropState.offX = Math.min(maxX, Math.max(-maxX, cropState.offX));
+  cropState.offY = Math.min(maxY, Math.max(-maxY, cropState.offY));
+}
+
+function renderCropCanvas() {
+  if (!cropState) return;
+  cropState.zoom = Number(document.getElementById("bp_zoom").value) || 1;
+  clampCropOffset();
+  let canvas = document.getElementById("bp_crop_canvas");
+  let ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  let scale = cropState.baseScale * cropState.zoom;
+  let dw = cropState.img.width * scale, dh = cropState.img.height * scale;
+  let dx = canvas.width / 2 - dw / 2 + cropState.offX;
+  let dy = canvas.height / 2 - dh / 2 + cropState.offY;
+  ctx.drawImage(cropState.img, dx, dy, dw, dh);
+}
+
+function wireCropEvents(canvas) {
+  let drag = null;
+  canvas.onpointerdown = e => {
+    drag = { x: e.clientX, y: e.clientY, offX: cropState.offX, offY: cropState.offY };
+    canvas.setPointerCapture(e.pointerId);
+  };
+  canvas.onpointermove = e => {
+    if (!drag) return;
+    let rect = canvas.getBoundingClientRect();
+    let ratio = canvas.width / rect.width;
+    cropState.offX = drag.offX + (e.clientX - drag.x) * ratio;
+    cropState.offY = drag.offY + (e.clientY - drag.y) * ratio;
+    renderCropCanvas();
+  };
+  canvas.onpointerup = () => { drag = null; };
+  canvas.onpointercancel = () => { drag = null; };
+}
+
+function saveBodyPhoto() {
+  if (!cropState) { alert("Choose a photo first."); return; }
+  let canvas = document.getElementById("bp_crop_canvas");
+  let data = canvas.toDataURL("image/jpeg", 0.85);
+  let label = document.getElementById("bp_label").value.trim();
+  bodyPhotos.push({ id: Date.now(), date: todayStr(), label, data });
+  bodyPhotos.sort((a, b) => a.date.localeCompare(b.date));
+  cropState = null;
+  save(); closeOverlay(); renderBody();
 }
 
 /* ============================================================
@@ -731,7 +1029,7 @@ function renderSettings() {
   </div>`;
 
   html += `<div class="card"><h3>Backup</h3>
-    <div class="section-note">Export regularly — all data (including meal photos) lives only in this browser's storage.</div>
+    <div class="section-note">Export regularly — all data (including meal and body photos) lives only in this browser's storage.</div>
     <div class="row"><button onclick="exportData()">Export JSON</button><button class="secondary" onclick="document.getElementById('importFile').click()">Import JSON</button></div>
     <input type="file" id="importFile" accept="application/json" style="display:none" onchange="importData(this)">
   </div>`;
@@ -766,7 +1064,7 @@ function saveSettings() {
 function deleteHistoryDay(i) { if (confirm("Delete this day from history?")) { history.splice(i, 1); save(); renderSettings(); } }
 
 function exportData() {
-  let blob = new Blob([JSON.stringify({ templates, foods, today, history, bodyLog, water, settings }, null, 2)], { type: "application/json" });
+  let blob = new Blob([JSON.stringify({ templates, foods, today, history, bodyLog, bodyPhotos, water, settings }, null, 2)], { type: "application/json" });
   let a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = `diet_backup_${todayStr()}.json`;
@@ -784,8 +1082,10 @@ function importData(input) {
       today = data.today || { date: todayStr(), entries: [] };
       history = data.history || [];
       bodyLog = data.bodyLog || [];
+      bodyPhotos = data.bodyPhotos || [];
       water = data.water || {};
-      settings = Object.assign({ targets: Object.assign({}, DEFAULT_TARGETS), proteinMode: "manual", proteinPerKgLBM: 2, waterTarget: 8, theme: "night" }, data.settings || {});
+      settings = Object.assign({ targets: Object.assign({}, DEFAULT_TARGETS), proteinMode: "manual", proteinPerKgLBM: 2, waterTarget: 8, theme: "night", bodyPin: "" }, data.settings || {});
+      bodyPhotosUnlocked = false;
       save(); applyTheme();
       alert("Backup imported.");
       tab("meals");

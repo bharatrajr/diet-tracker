@@ -1,4 +1,4 @@
-/* ============================================================
+﻿/* ============================================================
    Nutrient model
    ============================================================ */
 
@@ -41,7 +41,7 @@ const NUTRIENT_META = {
   zinc: { label: "Zinc", unit: "mg" }
 };
 
-// Standard adult daily reference values — editable per user in Settings.
+// Standard adult daily reference values -- editable per user in Settings.
 const DEFAULT_TARGETS = {
   cal: 2200, protein: 130, carbs: 300, fat: 70, fiber: 30, sugar: 50,
   vitA: 900, vitC: 90, vitD: 15, vitE: 15, vitK: 120,
@@ -56,10 +56,25 @@ function emptyNutrients() {
 }
 
 /* ============================================================
-   Food library — per-100g values, editable, with serving presets.
+   Body tracking -- optional measurements beyond weight/body-fat
+   ============================================================ */
+
+const BODY_METRICS = [
+  { id: "waist", label: "Waist", unit: "cm" },
+  { id: "chest", label: "Chest", unit: "cm" },
+  { id: "hips", label: "Hips", unit: "cm" },
+  { id: "shoulders", label: "Shoulders", unit: "cm" },
+  { id: "neck", label: "Neck", unit: "cm" },
+  { id: "arms", label: "Arms", unit: "cm" },
+  { id: "thighs", label: "Thighs", unit: "cm" },
+  { id: "calves", label: "Calves", unit: "cm" }
+];
+
+/* ============================================================
+   Food library -- per-100g values, editable, with serving presets.
    Sourced from USDA FoodData Central / ICMR-NIN Indian Food
    Composition Tables where relevant. Treat as good approximations,
-   not lab-verified figures — edit freely for your own brands.
+   not lab-verified figures -- edit freely for your own brands.
    ============================================================ */
 
 const DEFAULT_FOODS = [
@@ -169,6 +184,7 @@ const DEFAULT_TEMPLATES = [
     name: "Oats Shake",
     category: "Breakfast",
     photo: null,
+    foodItems: [],
     ingredients: ["40g oats", "300ml milk", "1 scoop whey"],
     nutrients: Object.assign(emptyNutrients(), { cal: 472, protein: 44, carbs: 39, fat: 15, fiber: 4, calcium: 320, sodium: 180, potassium: 520 })
   },
@@ -176,19 +192,20 @@ const DEFAULT_TEMPLATES = [
     name: "Rice Eggs Meal",
     category: "Lunch",
     photo: null,
+    foodItems: [],
     ingredients: ["100g rice", "4 eggs"],
     nutrients: Object.assign(emptyNutrients(), { cal: 640, protein: 31, carbs: 80, fat: 20, fiber: 1, calcium: 60, iron: 2.5 })
   }
 ];
 
 /* ============================================================
-   AI extraction helper — generates a copy-paste prompt so any
+   AI extraction helper -- generates a copy-paste prompt so any
    chat AI returns nutrition data in a format this tool can import.
    ============================================================ */
 
 function buildAiFoodPrompt(foodName) {
   let name = (foodName || "the food").trim();
-  return `Give me the complete nutrition profile of "${name}" per 100 grams (or per 100ml if it's a liquid).
+  return `Give me the complete nutrition profile of "${name}" per 100 grams (or per 100ml if it is a liquid).
 
 Return ONLY a single valid JSON object, no other text, no markdown fences, using exactly this schema and these units:
 
@@ -207,7 +224,7 @@ Return ONLY a single valid JSON object, no other text, no markdown fences, using
   ]
 }
 
-Use 0 for any nutrient with no significant amount — never omit a key. Base the numbers on USDA FoodData Central or, for Indian foods, ICMR-NIN Indian Food Composition Tables. Return nothing except that JSON object.`;
+Use 0 for any nutrient with no significant amount -- never omit a key. Base the numbers on USDA FoodData Central or, for Indian foods, ICMR-NIN Indian Food Composition Tables. Return nothing except that JSON object.`;
 }
 
 // Extracts the first {...} block from pasted text and parses it as a food record.
