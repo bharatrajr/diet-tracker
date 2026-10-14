@@ -173,20 +173,14 @@ function readAndResizeImage(file, maxDim, cb) {
    MEALS TAB
    ============================================================ */
 
-function renderMeals() {
-  checkNutrientAlerts();
+function mealListHtml() {
   let filtered = templates
     .map((m, i) => ({ m, i }))
     .filter(({ m }) => mealFilter === "All" || m.category === mealFilter)
     .filter(({ m }) => !mealSearch || m.name.toLowerCase().includes(mealSearch.toLowerCase()))
     .sort((a, b) => (b.m.pinned ? 1 : 0) - (a.m.pinned ? 1 : 0));
 
-  let html = `<h2 class="page-title">Meals</h2>`;
-  html += `<div class="search-wrap"><input id="mealSearchInput" placeholder="Search meal templates..." value="${escapeAttr(mealSearch)}" oninput="mealSearch=this.value;renderMeals()"></div>`;
-  html += `<div class="chip-row">`;
-  ["All", ...CATEGORIES].forEach(c => html += `<div class="chip ${mealFilter === c ? 'active' : ''}" onclick="mealFilter='${c}';renderMeals()">${c}</div>`);
-  html += `</div>`;
-
+  let html = "";
   if (!filtered.length) html += `<div class="card"><div class="empty">No meal templates match. Create one with the + button.</div></div>`;
 
   filtered.forEach(({ m, i }) => {
@@ -208,6 +202,24 @@ function renderMeals() {
       </div>
     </div>`;
   });
+  return html;
+}
+
+// Only the results list is replaced while typing, so the search input (and the
+// mobile keyboard) is never torn down.
+function renderMealList() {
+  let el = document.getElementById("mealList");
+  if (el) el.innerHTML = mealListHtml();
+}
+
+function renderMeals() {
+  checkNutrientAlerts();
+  let html = `<h2 class="page-title">Meals</h2>`;
+  html += `<div class="search-wrap"><input placeholder="Search meal templates..." value="${escapeAttr(mealSearch)}" oninput="mealSearch=this.value;renderMealList()"></div>`;
+  html += `<div class="chip-row">`;
+  ["All", ...CATEGORIES].forEach(c => html += `<div class="chip ${mealFilter === c ? 'active' : ''}" onclick="mealFilter='${c}';renderMeals()">${c}</div>`);
+  html += `</div>`;
+  html += `<div id="mealList">${mealListHtml()}</div>`;
 
   html += `<div class="card"><div class="spread"><h3>Today's Log — ${today.date}</h3><span class="streak-badge">Streak: ${currentStreak()}d</span></div>`;
   if (!today.entries.length) {
@@ -229,14 +241,7 @@ function renderMeals() {
     <button ${today.entries.length ? "" : "disabled"} onclick="closeDay()">Close Day</button>
   </div></div>`;
 
-  let mealSearchHadFocus = document.activeElement && document.activeElement.id === "mealSearchInput";
-  let mealSearchCaret = mealSearchHadFocus ? document.activeElement.selectionStart : 0;
   document.getElementById("meals").innerHTML = html;
-  if (mealSearchHadFocus) {
-    let el = document.getElementById("mealSearchInput");
-    el.focus();
-    el.setSelectionRange(mealSearchCaret, mealSearchCaret);
-  }
 }
 
 function openAddServing(i) {
@@ -464,20 +469,13 @@ function confirmQuickAdd() {
    FOODS TAB — reference library with editable serving presets
    ============================================================ */
 
-function renderFoods() {
+function foodListHtml() {
   let filtered = foods.map((f, i) => ({ f, i }))
     .filter(({ f }) => !foodSearch || f.name.toLowerCase().includes(foodSearch.toLowerCase()))
     .sort((a, b) => (b.f.pinned ? 1 : 0) - (a.f.pinned ? 1 : 0));
 
-  let html = `<h2 class="page-title">Foods</h2>
-  <div class="section-note">Reference nutrition per 100g/100ml with common serving presets. Log a preset straight to today, or edit the numbers for your own brand.</div>
-  <div class="search-wrap"><input id="foodSearchInput" placeholder="Search foods..." value="${escapeAttr(foodSearch)}" oninput="foodSearch=this.value;renderFoods()"></div>
-  <div class="row" style="margin-bottom:12px">
-    <button onclick="openFoodForm()">Add food manually</button>
-    <button class="secondary" onclick="openAiFoodFlow()">Add food with AI</button>
-  </div>`;
-
-  if (!filtered.length) html += `<div class="card"><div class="empty">No foods match your search.</div></div>`;
+  let html = "";
+  if (!filtered.length) html += `<div class="card"><div class="empty">${foods.length ? "No foods match your search." : "No foods yet. Add one manually or with AI."}</div></div>`;
 
   filtered.forEach(({ f, i }) => {
     html += `<div class="card">
@@ -491,17 +489,26 @@ function renderFoods() {
       </div>
     </div>`;
   });
-
-  let searchHadFocus = document.activeElement && document.activeElement.id === "foodSearchInput";
-  let searchCaret = searchHadFocus ? document.activeElement.selectionStart : 0;
-  document.getElementById("foods").innerHTML = html;
-  if (searchHadFocus) {
-    let el = document.getElementById("foodSearchInput");
-    el.focus();
-    el.setSelectionRange(searchCaret, searchCaret);
-  }
+  return html;
 }
 
+function renderFoodList() {
+  let el = document.getElementById("foodList");
+  if (el) el.innerHTML = foodListHtml();
+}
+
+function renderFoods() {
+  let html = `<h2 class="page-title">Foods</h2>
+  <div class="section-note">Reference nutrition per 100g/100ml with common serving presets. Log a preset straight to today, or edit the numbers for your own brand.</div>
+  <div class="search-wrap"><input placeholder="Search foods..." value="${escapeAttr(foodSearch)}" oninput="foodSearch=this.value;renderFoodList()"></div>
+  <div class="row" style="margin-bottom:12px">
+    <button onclick="openFoodForm()">Add food manually</button>
+    <button class="secondary" onclick="openAiFoodFlow()">Add food with AI</button>
+  </div>
+  <div id="foodList">${foodListHtml()}</div>`;
+
+  document.getElementById("foods").innerHTML = html;
+}
 function toggleFoodPin(i) { foods[i].pinned = !foods[i].pinned; save(); renderFoods(); }
 
 function openLogFoodPreset(i, pi) {
