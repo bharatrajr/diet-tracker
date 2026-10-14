@@ -182,7 +182,7 @@ function renderMeals() {
     .sort((a, b) => (b.m.pinned ? 1 : 0) - (a.m.pinned ? 1 : 0));
 
   let html = `<h2 class="page-title">Meals</h2>`;
-  html += `<div class="search-wrap"><input placeholder="Search meal templates..." value="${escapeAttr(mealSearch)}" oninput="mealSearch=this.value;renderMeals()"></div>`;
+  html += `<div class="search-wrap"><input id="mealSearchInput" placeholder="Search meal templates..." value="${escapeAttr(mealSearch)}" oninput="mealSearch=this.value;renderMeals()"></div>`;
   html += `<div class="chip-row">`;
   ["All", ...CATEGORIES].forEach(c => html += `<div class="chip ${mealFilter === c ? 'active' : ''}" onclick="mealFilter='${c}';renderMeals()">${c}</div>`);
   html += `</div>`;
@@ -229,7 +229,14 @@ function renderMeals() {
     <button ${today.entries.length ? "" : "disabled"} onclick="closeDay()">Close Day</button>
   </div></div>`;
 
+  let mealSearchHadFocus = document.activeElement && document.activeElement.id === "mealSearchInput";
+  let mealSearchCaret = mealSearchHadFocus ? document.activeElement.selectionStart : 0;
   document.getElementById("meals").innerHTML = html;
+  if (mealSearchHadFocus) {
+    let el = document.getElementById("mealSearchInput");
+    el.focus();
+    el.setSelectionRange(mealSearchCaret, mealSearchCaret);
+  }
 }
 
 function openAddServing(i) {
@@ -464,7 +471,7 @@ function renderFoods() {
 
   let html = `<h2 class="page-title">Foods</h2>
   <div class="section-note">Reference nutrition per 100g/100ml with common serving presets. Log a preset straight to today, or edit the numbers for your own brand.</div>
-  <div class="search-wrap"><input placeholder="Search foods..." value="${escapeAttr(foodSearch)}" oninput="foodSearch=this.value;renderFoods()"></div>
+  <div class="search-wrap"><input id="foodSearchInput" placeholder="Search foods..." value="${escapeAttr(foodSearch)}" oninput="foodSearch=this.value;renderFoods()"></div>
   <div class="row" style="margin-bottom:12px">
     <button onclick="openFoodForm()">Add food manually</button>
     <button class="secondary" onclick="openAiFoodFlow()">Add food with AI</button>
@@ -485,7 +492,14 @@ function renderFoods() {
     </div>`;
   });
 
+  let searchHadFocus = document.activeElement && document.activeElement.id === "foodSearchInput";
+  let searchCaret = searchHadFocus ? document.activeElement.selectionStart : 0;
   document.getElementById("foods").innerHTML = html;
+  if (searchHadFocus) {
+    let el = document.getElementById("foodSearchInput");
+    el.focus();
+    el.setSelectionRange(searchCaret, searchCaret);
+  }
 }
 
 function toggleFoodPin(i) { foods[i].pinned = !foods[i].pinned; save(); renderFoods(); }
@@ -860,17 +874,68 @@ function renderPlanner() {
   return html;
 }
 
+function plannerPresetOptions(foodName, selectedGrams) {
+  let food = foods.find(f => f.name === foodName);
+  let opts = `<option value="">Custom grams</option>`;
+  if (!food) return opts;
+  let matched = false;
+  (food.presets || []).forEach((p, pi) => {
+    let sel = !matched && selectedGrams && Number(selectedGrams) === Number(p.grams);
+    if (sel) matched = true;
+    opts += `<option value="${pi}" ${sel ? "selected" : ""}>${escapeHtml(p.label)} &middot; ${p.grams}g</option>`;
+  });
+  return opts;
+}
+
 function addPlannerRow(food, grams) {
   let idx = window._plannerCount++;
   let options = foods.map(f => `<option value="${escapeAttr(f.name)}" ${food === f.name ? "selected" : ""}>${escapeHtml(f.name)}</option>`).join("");
   document.getElementById("plannerRows").insertAdjacentHTML("beforeend", `
-    <div class="row" id="pl_row_${idx}" style="margin-bottom:6px">
-      <select style="flex:2" id="pl_food_${idx}" onchange="recomputePlanner()">
-        <option value="">Select food...</option>${options}
-      </select>
-      <input style="flex:1" id="pl_grams_${idx}" type="number" min="0" step="1" placeholder="grams" value="${grams || ''}" oninput="recomputePlanner()">
-      <button class="delete small" onclick="removePlannerRow(${idx})">&times;</button>
+    <div id="pl_row_${idx}" style="margin-bottom:12px">
+      <div class="row">
+        <select style="flex:1" id="pl_food_${idx}" onchange="onPlannerFoodChange(${idx})">
+          <option value="">Select food...</option>${options}
+        </select>
+        <button class="delete small" onclick="removePlannerRow(${idx})">&times;</button>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <select style="flex:2" id="pl_preset_${idx}" onchange="onPlannerPresetChange(${idx})">${plannerPresetOptions(food, grams)}</select>
+        <input style="flex:1" id="pl_qty_${idx}" type="number" min="0" step="0.25" value="1" title="Quantity of the selected serving" oninput="onPlannerPresetChange(${idx})">
+        <input style="flex:1" id="pl_grams_${idx}" type="number" min="0" step="1" placeholder="grams" value="${grams || ''}" oninput="onPlannerGramsInput(${idx})">
+      </div>
     </div>`);
+}
+
+function onPlannerFoodChange(idx) {
+  let foodName = document.getElementById(`pl_food_${idx}`).value;
+  let food = foods.find(f => f.name === foodName);
+  document.getElementById(`pl_preset_${idx}`).innerHTML = plannerPresetOptions(foodName, null);
+  document.getElementById(`pl_qty_${idx}`).value = 1;
+  let gramsEl = document.getElementById(`pl_grams_${idx}`);
+  if (food && food.presets && food.presets.length) {
+    document.getElementById(`pl_preset_${idx}`).value = "0";
+    gramsEl.value = food.presets[0].grams;
+  } else {
+    gramsEl.value = "";
+  }
+  recomputePlanner();
+}
+
+function onPlannerPresetChange(idx) {
+  let foodName = document.getElementById(`pl_food_${idx}`).value;
+  let food = foods.find(f => f.name === foodName);
+  let presetVal = document.getElementById(`pl_preset_${idx}`).value;
+  if (food && presetVal !== "") {
+    let p = food.presets[Number(presetVal)];
+    let qty = Number(document.getElementById(`pl_qty_${idx}`).value) || 0;
+    if (p) document.getElementById(`pl_grams_${idx}`).value = round1(p.grams * qty);
+  }
+  recomputePlanner();
+}
+
+function onPlannerGramsInput(idx) {
+  document.getElementById(`pl_preset_${idx}`).value = "";
+  recomputePlanner();
 }
 
 function removePlannerRow(idx) {
